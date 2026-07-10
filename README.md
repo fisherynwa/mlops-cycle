@@ -1,8 +1,6 @@
+
 # Insurance Cost MLOps
 
-An end-to-end MLOps pipeline that predicts insurance charges with an **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a live prediction API, with experiment tracking, a model registry, drift monitoring, and observability dashboards.
-
-> Personal project demonstrating the full MLOps lifecycle on synthetic data.
 
 ![Python](https://img.shields.io/badge/python-3.12-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-serving-009688.svg)
@@ -12,6 +10,9 @@ An end-to-end MLOps pipeline that predicts insurance charges with an **Generaliz
 ![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800.svg)
 ![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
+
+An end-to-end MLOps pipeline that predicts insurance charges with an **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a live prediction API, with experiment tracking, a model registry, drift monitoring, and observability dashboards.
+
 
 ---
 
@@ -122,7 +123,7 @@ Each run logs to MLflow: scalar metrics (`r2`, `mae`, `rmse`, `aic`, `edof`), pe
 
 ### MLflow tracking
 
-![MLflow runs](docs/mlflow_runs.png)
+![MLflow runs](docs/mlflow_pipeline.png)
 
 ---
 
@@ -131,10 +132,6 @@ Each run logs to MLflow: scalar metrics (`r2`, `mae`, `rmse`, `aic`, `edof`), pe
 ```bash
 python -m src.monitor --current data/data_drift.csv --out reports/drift_report.html
 ```
-
-Scores the batch with the champion, runs an **Evidently** report (Jensen-Shannon drift), and adds **statistical attribution**: a Kolmogorov-Smirnov test for `age` and a two-proportion Z-test for `smoker`. Everything — the HTML report, JSD metrics, and test results — is logged to a single MLflow run under the `drift_monitoring` experiment.
-
-On the drifted batch, `age` drifts hard (KS significant, +12yr mean shift) while `smoker` stays stable — turning "drift detected" into "drift is driven by age."
 
 
 ![Drift report](reports/drift_report.png)

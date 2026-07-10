@@ -2,8 +2,9 @@
 __pycache__/
 *.pyc
 mlruns/
+multirun/
 mlflow.db
 reports/*.html
 /data/predictions.jsonl
 .env
-notebooks
+notebooks/

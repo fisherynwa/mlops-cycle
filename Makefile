@@ -6,8 +6,8 @@ export MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
 setup:            ## install deps into a local venv via uv
 	uv sync
 
-data:             ## generate synthetic reference + drift datasets
-	uv run python -m src.data.generate
+data:                ## generate reference + no-drift + data-drift datasets
+	uv run python data/data_generating.py
 
 train:            ## fit the GAM, verify shape recovery, register @champion
 	uv run python -m src.train
