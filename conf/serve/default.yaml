@@ -1,0 +1,11 @@
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  model_uri: models:/insurance-cost@champion
+  registry_name: insurance-cost
+  
+monitor:
+  jsd_threshold: 0.1
+  alpha: 0.05
+  bins: 20
+  reference: data/reference.csv
+  current: data/data_drift.csv

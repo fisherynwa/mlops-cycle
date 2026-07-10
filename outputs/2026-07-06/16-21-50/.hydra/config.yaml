@@ -1,0 +1,28 @@
+model:
+  name: s(0,25)+l(1)+f(2)
+  terms:
+  - kind: s
+    col: 0
+    n_splines: 25
+  - kind: l
+    col: 1
+  - kind: f
+    col: 2
+data:
+  path: data/reference.csv
+  target: charges
+  test_size: 0.2
+gridsearch:
+  enabled: true
+  lam_min: -3
+  lam_max: 4
+  lam_num: 50
+mlflow:
+  tracking_uri: sqlite:///${hydra:runtime.cwd}/mlflow.db
+  experiment: insurance_gam
+registry:
+  enabled: true
+  name: insurance-cost
+  promote: false
+ci: 0.95
+seed: 123

@@ -1,0 +1,5 @@
+name: "s(0,25)+l(1)+f(2)"
+terms:
+  - {kind: s, col: 0, n_splines: 25}   # spline on age
+  - {kind: l, col: 1}                   # linear on bmi
+  - {kind: f, col: 2}                   # factor on smoker

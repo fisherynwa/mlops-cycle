@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Tests (incl. GAM shape-recovery gate + JSD drift separation)
+        run: uv run pytest
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: lint-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build stack and train the champion
+        run: docker compose up -d --build postgres mlflow trainer api
+      - name: Wait for the API to come up
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:8000/health; then echo "up"; exit 0; fi
+            sleep 5
+          done
+          docker compose logs api trainer; exit 1
+      - name: Smoke a prediction
+        run: |
+          curl -sf -X POST http://localhost:8000/predict \
+            -H 'content-type: application/json' \
+            -d '{"age":45,"bmi":31.5,"smoker":true,"children":2,"region":"se"}' | tee /dev/stderr | grep -q charge
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

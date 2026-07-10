@@ -1,0 +1,24 @@
+model:
+  name: s(0,25)+s(1)+f(2)
+  terms:
+  - kind: s
+    col: 0
+    n_splines: 25
+  - kind: s
+    col: 1
+  - kind: f
+    col: 2
+data:
+  path: data/reference.csv
+  target: charges
+  test_size: 0.2
+gridsearch:
+  enabled: true
+  lam_min: -3
+  lam_max: 4
+  lam_num: 8
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  experiment: insurance_gam
+clf: 0.95
+seed: 0

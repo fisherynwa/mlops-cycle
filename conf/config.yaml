@@ -1,0 +1,31 @@
+defaults:
+  - model: age_spline_bmi_linear   # default model spec; override with model=...
+  - serve: default # default serving config
+  - schema: default # default schema config
+  - _self_
+
+data:
+  path: data/reference.csv
+  target: charges
+  test_size: 0.2
+
+gridsearch:
+  enabled: true
+  lam_min: -3      # 10**lam_min
+  lam_max: 4      # 10**lam_max
+  lam_num: 50
+
+mlflow:
+  tracking_uri: sqlite:///${hydra:runtime.cwd}/mlflow.db
+  experiment: insurance_gam
+
+registry:
+  enabled: false
+  name: insurance-cost
+  promote: false
+
+ci: 0.95
+
+seed: 42
+
+alpha: 0.05

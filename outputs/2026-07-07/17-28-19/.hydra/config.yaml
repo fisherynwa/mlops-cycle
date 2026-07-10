@@ -1,0 +1,50 @@
+model:
+  name: s(0,15)+l(1)+f(2)
+  terms:
+  - kind: s
+    col: 0
+    n_splines: 15
+  - kind: l
+    col: 1
+  - kind: f
+    col: 2
+serve:
+  mlflow:
+    tracking_uri: sqlite:///mlflow.db
+    model_uri: models:/insurance-cost@champion
+    registry_name: insurance-cost
+  monitor:
+    jsd_threshold: 0.1
+    alpha: 0.05
+    reference: data/reference.csv
+    current: data/data_drift.csv
+schema:
+  num_cols:
+  - age
+  - bmi
+  cat_cols:
+  - smoker
+  target: charges
+  encoders:
+    smoker:
+      'no': 0
+      'yes': 1
+data:
+  path: data/reference.csv
+  target: charges
+  test_size: 0.2
+gridsearch:
+  enabled: true
+  lam_min: -3
+  lam_max: 4
+  lam_num: 50
+mlflow:
+  tracking_uri: sqlite:///${hydra:runtime.cwd}/mlflow.db
+  experiment: insurance_gam
+registry:
+  enabled: false
+  name: insurance-cost
+  promote: false
+ci: 0.95
+test_size: 0.2
+seed: 42

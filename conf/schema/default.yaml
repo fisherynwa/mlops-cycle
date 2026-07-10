@@ -1,0 +1,5 @@
+num_cols: [age, bmi]
+cat_cols: [smoker]
+target: charges
+encoders:
+  smoker: {"no": 0, "yes": 1}
