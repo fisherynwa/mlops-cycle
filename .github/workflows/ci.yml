@@ -18,7 +18,7 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
-      - name: Tests (incl. GAM shape-recovery gate + JSD drift separation)
+      - name: Tests
         run: uv run pytest
 
   integration:
@@ -39,7 +39,7 @@ jobs:
         run: |
           curl -sf -X POST http://localhost:8000/predict \
             -H 'content-type: application/json' \
-            -d '{"age":45,"bmi":31.5,"smoker":true,"children":2,"region":"se"}' | tee /dev/stderr | grep -q charge
+            -d '{"age":45,"bmi":31.5,"smoker":"yes"}' | tee /dev/stderr | grep -q charge
       - name: Tear down
         if: always()
         run: docker compose down -v

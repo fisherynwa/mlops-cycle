@@ -14,24 +14,24 @@ services:
       retries: 5
 
   mlflow:
-      build:
-        context: .
-        dockerfile: docker/mlflow.Dockerfile
-      command: >
-        mlflow server --host 0.0.0.0 --port 5000
-        --backend-store-uri postgresql://mlflow:mlflow@postgres/mlflow
-        --artifacts-destination /artifacts --serve-artifacts
-        --allowed-hosts "mlflow:*,localhost:*,127.0.0.1:*"
-        --cors-allowed-origins "*"
-      volumes:
-        - mlflow-artifacts:/artifacts
-      ports:
-        - "5555:5000"
-      depends_on:
-        postgres:
-          condition: service_healthy
+    build:
+      context: .
+      dockerfile: docker/mlflow.Dockerfile
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri postgresql://mlflow:mlflow@postgres/mlflow
+      --artifacts-destination /artifacts --serve-artifacts
+      --allowed-hosts "mlflow:*,localhost:*,127.0.0.1:*"
+      --cors-allowed-origins "*"
+    volumes:
+      - mlflow-artifacts:/artifacts
+    ports:
+      - "5555:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-  # One-shot: generate data + train + register the first champion, then exit.
+  # One-shot: train + register the first champion, then exit.
   trainer:
     build:
       context: .
@@ -52,13 +52,8 @@ services:
     command: uvicorn src.serve:app --host 0.0.0.0 --port 8000
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      AB_MODE: shadow
-      SPLIT_FRACTION: "0.10"
-      PRED_LOG: /data/predictions.jsonl
     ports:
       - "8000:8000"
-    volumes:
-      - predictions:/data
     depends_on:
       trainer:
         condition: service_completed_successfully
@@ -68,7 +63,7 @@ services:
     build:
       context: .
       dockerfile: docker/app.Dockerfile
-    command: python -m src.monitor --current data/prod_concept_smoker.csv --out reports/report.html
+    command: python -m src.monitor --current data/data_drift.csv --out reports/report.html
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:

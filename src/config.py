@@ -16,7 +16,7 @@ def load_config(config_name: str = "config"):
 
 
 cfg = load_config()
-
+## Configuration values for the MLflow tracking and model registry; all these are used in serve.py and monitor.py (and tested in test_config.py)
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", cfg.serve.mlflow.tracking_uri) # this is sqlite
 # MODEL_URI is the path to the champion model in the MLflow registry
 MODEL_URI = os.getenv("MODEL_URI", cfg.serve.mlflow.model_uri)

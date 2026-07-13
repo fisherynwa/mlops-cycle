@@ -1,15 +1,11 @@
 name: drift-check
 
-# Scheduled "CD" half of the loop: score a fresh batch, and if the target has
-# drifted, publish the Evidently report and open an issue to trigger a retrain.
 on:
-  schedule:
-    - cron: "0 6 * * 1"   # weekly, Monday 06:00 UTC
   workflow_dispatch:
     inputs:
       batch:
         description: production batch to score
-        default: prod_concept_smoker
+        default: data_drift
 
 jobs:
   monitor:
@@ -19,30 +15,28 @@ jobs:
       issues: write
     env:
       MLFLOW_TRACKING_URI: sqlite:///mlflow.db
-      BATCH: ${{ github.event.inputs.batch || 'prod_concept_smoker' }}
+      BATCH: ${{ github.event.inputs.batch || 'data_drift' }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --frozen
-      - name: Regenerate data and train a champion
+      - name: Generate data and register a champion
         run: |
-          uv run python -m src.data.generate
-          uv run python -m src.train
+          uv run python data/data_generating.py
+          uv run python -m src.train registry.enabled=true registry.promote=true
       - name: Run the drift monitor
-        run: |
-          uv run python -m src.monitor --current data/${BATCH}.csv --out reports/report.html \
-            | tee summary.json
+        run: uv run python -m src.monitor --current data/${BATCH}.csv --out reports/report.html
       - uses: actions/upload-artifact@v4
         with:
           name: evidently-report
           path: reports/report.html
-      - name: Open an issue if target drift detected
+      - name: Open an issue if drift detected
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(uv run python -c 'import json;print(json.load(open("summary.json"))["target_drift"])')" = "True" ]; then
+          if [ "$(uv run python -c 'import json;print(json.load(open("summary.json"))["drift_detected"])')" = "True" ]; then
             gh issue create --title "Drift detected on ${BATCH} — retrain challenger" \
-              --body "The scheduled monitor flagged target drift. See the uploaded Evidently report."
+              --body "The scheduled monitor flagged drift. See the uploaded Evidently report."
           else
-            echo "No target drift; nothing to do."
+            echo "No drift detected; nothing to do."
           fi

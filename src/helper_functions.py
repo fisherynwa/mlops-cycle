@@ -1,7 +1,3 @@
-
-# src/helper_functions.py
-"""Plotting + export helpers for training and monitoring."""
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -55,9 +51,11 @@ def plot_residuals(gam, X, y, feature_names):
 #### More helper functions for monitoring and drift detection; z-test for continuous features, log-odds ratio for categorical features; these are used in the monitor.py script to detect drift between reference and current datasets
 
  
-def ks(ref, cur, alpha):
-    """KS test: whole-distribution drift for a continuous feature (mean shift as effect size)."""
-    stat, p = ks_2samp(cur, ref)
+def ks_test(ref, cur, alpha):
+    """Two-sample Kolmogorov-Smirnov test: did the distribution move?
+    H0: the two samples are drawn from the same distribution
+    H1: the two samples are drawn from different distributions"""
+    stat, p = ks_2samp(cur, ref, alternative="two-sided") # two-sided test is the default option; but we specify it explicitly for clarity
     return {
         "test": "ks_2samp",
         "shift": round(float(cur.mean() - ref.mean()), 2),
@@ -86,4 +84,7 @@ def js_distance(a, b, bins=20):
     edges = np.linspace(min(a.min(), b.min()), max(a.max(), b.max()), bins + 1)
     p = np.histogram(a, edges)[0] + 1e-9
     q = np.histogram(b, edges)[0] + 1e-9
-    return float(jensenshannon(p / p.sum(), q / q.sum(), base=2))
+    # base=2 gives a distance in bits, which is more interpretable than nats (base e)
+    # the Jensen-Shannon distance is symmetric and bounded between 0 and 1, making it a good choice for measuring distributional similarity
+    # the JSD is the square root of the Jensen-Shannon divergence, which is a smoothed and symmetrized version of the Kullback-Leibler divergence
+    return float(jensenshannon(p / p.sum(), q / q.sum(), base=2)) 

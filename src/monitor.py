@@ -28,7 +28,7 @@ from loguru import logger
 from src.config import (MLFLOW_URI, MODEL_URI, JSD_THRESHOLD, NUM_COLS, CAT_COLS, TARGET, ENCODERS, ALPHA, BINS)
 from scipy.spatial.distance import jensenshannon
 import numpy as np
-from src.helper_functions import js_distance, ks, proptest
+from src.helper_functions import js_distance, ks_test, proptest
 
 # --- the score() function is tested in tests/test_monitor.py ---
 def score(df: pd.DataFrame, model) -> pd.DataFrame:
@@ -81,9 +81,9 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     cur_raw = pd.read_csv(current_csv)
     positive = next(k for k, v in ENCODERS["smoker"].items() if v == 1)
     feat_tests = {
-        "age": ks(ref_raw["age"].to_numpy(), cur_raw["age"].to_numpy(), ALPHA),
+        "age": ks_test(ref_raw["age"].to_numpy(), cur_raw["age"].to_numpy(), ALPHA),
         "smoker": proptest(ref_raw["smoker"], cur_raw["smoker"], positive, ALPHA),
-        "bmi": ks(ref_raw["bmi"].to_numpy(), cur_raw["bmi"].to_numpy(), ALPHA),
+        "bmi": ks_test(ref_raw["bmi"].to_numpy(), cur_raw["bmi"].to_numpy(), ALPHA),
     }
     drift_sources = [f for f, r in feat_tests.items() if r["significant"]]
 

@@ -5,7 +5,8 @@ whenever you promote a new champion in training, restarting the server picks it
 up — no code change, no version numbers hardcoded.
 
 Run:
-  uvicorn src.serve:app --reload
+uvicorn src.serve:app --reload
+
 Then open http://localhost:8000/docs
 """
 
@@ -49,7 +50,7 @@ PRED_CHARGE = Histogram("prediction_charge", "Predicted insurance charge",
                         buckets=[5000, 10000, 20000, 30000, 40000, 60000])
 PREDICTIONS = Counter("predictions_total", "Predictions served", ["model_version"])
 
-
+# pydantic models for request and response bodies, with validation and examples
 class ClaimFeatures(BaseModel):
     age: int = Field(ge=0, le=120, examples=[45])
     bmi: float = Field(ge=10, le=60, examples=[30.5])

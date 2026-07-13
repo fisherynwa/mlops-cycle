@@ -4,7 +4,15 @@ __pycache__/
 mlruns/
 multirun/
 mlflow.db
+mlflow.db.*            # sqlite side-files (mlflow.db-wal, -shm)
 reports/*.html
 /data/predictions.jsonl
 .env
 notebooks/
+
+# added
+outputs/               # Hydra's per-run output dirs
+.pytest_cache/         # pytest cache
+logs/                  # your loguru log files
+*.log
+.DS_Store              # Mac clutter (harmless, but tidy if you ever share)

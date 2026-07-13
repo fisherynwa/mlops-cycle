@@ -15,6 +15,7 @@ import pytest
 
 from src.monitor import score
 from src.config import ENCODERS, NUM_COLS, CAT_COLS
+from src.helper_functions import ks_test, proptest
 
 
 class FakeModel:
@@ -68,3 +69,21 @@ class TestScore:
         out = score(raw_df, FakeModel())
         for col in raw_df.columns:
             assert col in out.columns  # charges, age, bmi, smoker all still there
+
+
+class TestKS:
+    """Tests for the ks_test() function: flags shifted data, quiet on same distribution."""
+    def setup_method(self):
+        rng = np.random.default_rng(0)
+        self.ref = rng.normal(40, 9, 1000)
+
+    def test_ks_flags_shifted_data(self):
+        cur = self.ref + 25                     # clearly shifted
+        result = ks_test(self.ref, cur, alpha=0.05)
+        assert result["significant"] is True
+
+    def test_ks_quiet_on_same_distribution(self):
+        rng = np.random.default_rng(1)
+        cur = rng.normal(40, 9, 1000)      # same distribution
+        result = ks_test(self.ref, cur, alpha=0.01)
+        assert result["significant"] is False

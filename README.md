@@ -11,19 +11,18 @@
 ![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-An end-to-end MLOps pipeline that predicts insurance charges with an **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a live prediction API, with experiment tracking, a model registry, drift monitoring, and observability dashboards.
+An end-to-end MLOps pipeline that predicts insurance charges with a **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a (live) prediction API, including experiment tracking, a model registry, drift monitoring, and observability dashboards
 
 
 ---
 
 ## Overview
 
-The project trains a GAM to predict insurance `charges` from `age`, `bmi` (linear ), and `smoker`, then **serves** as well as **monitors** it as a production-shaped system. This GAM was chosen over a black-box model because each feature's effect is **inspectable** - by means of partial effect plots (PEPs); these plots show the component effect of each of the smooth or linear terms in the **GAM** model, which add up to the overall prediction. 
+The project trains a GAM to predict insurance `charges` from `age`, `bmi` (linear), and `smoker`, then **serves** as well as **monitors** it as a production-shaped system. This GAM was chosen over a black-box model because each feature's effect is **inspectable** - by means of partial effect plots (PEPs); these plots show the component effect of each of the smooth or linear terms in the **GAM** model, which add up to the overall prediction. 
 
 ![PEPs](docs/partial_effects.png)
 
-
-The pipeline is fully **config-driven** (Hydra), **tracked and versioned** (MLflow), **served** over HTTP (FastAPI), **containerized** (Docker Compose), and **monitored** are two-fold: model/data drift (Evidently + statistical tests) and service health (Prometheus + Grafana).
+The pipeline is fully **config-driven** (Hydra), **tracked and versioned** (MLflow), **served** over HTTP (FastAPI), and **containerized (Docker Compose). Monitoring is two-fold: model/data drift (Evidently + statistical tests) and service health (Prometheus + Grafana).
 
 ---
 
@@ -44,9 +43,9 @@ Each piece is decoupled through the **MLflow model registry**: the trainer *writ
 ## Key design decisions
 
 - **GAM over black-box** -- interpretability. Each prediction decomposes into per-feature contributions (`intercept + splie(age, 15) + linear(bmi) + f(smoker)`).
-- **Model selection by the Akaike information criterion (AIC)** -- the linear-bmi model (`s(0, n_splines=15)+l(1)+f(2)`) beat the spline-bmi variant on the AIC, for equivalent fit. BMI's effect is genuinely near-linear; spending flexibility on it was wasteful.
+- **Model selection by the Akaike information criterion (AIC)** -- the linear-bmi model (`s(0, n_splines=15)+l(1)+f(2)`) beat the spline-bmi variant in the context of the AIC, for equivalent fit. BMI's effect is genuinely near-linear; spending flexibility on it was wasteful.
 - **Champion / challenger registry** — models register as `@challenger`; promotion to `@champion` is an explicit, gated step. Serving always loads the current champion by alias (e..g., `v1`).
-- **Drift attribution** — beyond a drift yes/no, per-feature statistical tests (Kolmogorov-Smirnov tests for `age` and `BMI`, the two-proportion Z-test for `smoker` since \in {0, 1}) identify *which* feature drifted and by how much.
+- **Drift attribution** — beyond a yes/no drift verdict by means of the Jensen-Shannon distance, per-feature statistical tests (two-sample Kolmogorov-Smirnov for `age` and `bmi`, a two-proportion Z-test for the binary `smoker`) perform statistical inference.
 
 ---
 
@@ -119,7 +118,7 @@ python -m src.train registry.enabled=true model=age_spline_bmi_spline
 python -m src.train registry.enabled=true registry.promote=true
 ```
 
-Each run logs to MLflow: scalar metrics (`r2`, `mae`, `rmse`, `aic`, `edof`), per-term p-values, the full config as an artifact, and diagnostic plots (partial-effect curves with CI bands, residual diagnostics).
+Each run logs to MLflow: scalar metrics (`r2`, `mae`, `rmse`, `aic`, `edof`, `deviance`, `pseudo R2`), per-term p-values, the full config as an artifact, and diagnostic plots (partial-effect curves with CI bands and residual diagnostics).
 
 ### MLflow tracking
 
@@ -134,7 +133,7 @@ python -m src.monitor --current data/data_drift.csv --out reports/drift_report.h
 ```
 
 
-![Drift report](reports/drift_report.png)
+![Drift report](docs/drift_report.png)
 
 ---
 
@@ -154,7 +153,6 @@ The panel below shows the **average predicted charge rising as a drifted batch i
 pytest
 ```
 
-Unit tests cover the load-bearing serving logic — categorical encoding, training-time column order, prediction output, and input immutability — using a fake model so the tests need no MLflow or Docker.
 
 ---
 
