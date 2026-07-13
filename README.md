@@ -8,7 +8,7 @@
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED.svg)
 ![Prometheus](https://img.shields.io/badge/Prometheus-metrics-E6522C.svg)
 ![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800.svg)
-![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC.svg)
+[![CI](https://github.com/fisherynwa/mlops-cycle/actions/workflows/ci.yml/badge.svg)](https://github.com/fisherynwa/mlops-cycle/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 An end-to-end MLOps pipeline that predicts insurance charges with a **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a (live) prediction API, including experiment tracking, a model registry, drift monitoring, and observability dashboards
