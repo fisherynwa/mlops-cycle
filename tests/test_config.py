@@ -1,5 +1,6 @@
 from src import config as c
 
+
 class TestConfig:
     def test_schema_columns_are_lists(self):
         assert isinstance(c.NUM_COLS, list)

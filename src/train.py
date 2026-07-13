@@ -16,23 +16,25 @@ Run:
   # stage a candidate — registers as @challenger, leaves @champion untouched
   python -m src.train registry.enabled=true model=age_spline_bmi_spline
   python -m src.train registry.enabled=true model=age_wiggly_spline_bmi_linear
-  
+
   # promote the winner — moves @champion to this version (what serving loads)
   python -m src.train registry.enabled=true registry.promote=true
 
   # start MLflow
-
   mlflow server --backend-store-uri sqlite:///mlflow.db --port 5555 --workers 1
 
 """
 
 import tempfile
 from pathlib import Path
+
+import cloudpickle
 import hydra
 import matplotlib
-import cloudpickle
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+
+matplotlib.use("Agg")  # must run before importing pyplot — headless backend for Docker/CI
+
+import matplotlib.pyplot as plt  # noqa: E402
 import mlflow
 import numpy as np
 import pandas as pd
@@ -45,8 +47,8 @@ from sklearn.metrics import (
     root_mean_squared_error,
 )
 from sklearn.model_selection import train_test_split
-from src.helper_functions import plot_partial_effects, plot_residuals
 
+from src.helper_functions import plot_partial_effects, plot_residuals
 
 TERM_BUILDERS = {
     "s": lambda t: s(t.col, n_splines=t.get("n_splines", 20)),
@@ -54,7 +56,8 @@ TERM_BUILDERS = {
     "f": lambda t: f(t.col),
 }
 
-# this is a helper function to build the GAM terms from the config file, which is a list of dicts; binds formula to the config file, so you can change the model without touching the code
+
+# this is a helper function to build the GAM terms from the config file, which is a list of dicts
 def build_terms(term_cfgs):
     """Turn the YAML term list into a pygam terms object: s(0, n_splines=20) + l(1) + f(2)."""
     terms = TERM_BUILDERS[term_cfgs[0].kind](term_cfgs[0])
@@ -62,14 +65,17 @@ def build_terms(term_cfgs):
         terms += TERM_BUILDERS[t.kind](t)
     return terms
 
-#### this function uses mapping from the config file to encode categorical features into numeric values, and returns the feature matrix X, target vector y, and feature names list; 
+
+# this function uses mapping from the config file to encode categorical features into numeric val.
+# returns the feature matrix X, target vector y, and feature names list
 # this is used in the main training function to prepare the data for the GAM model
 def load_xy(cfg):
     df = pd.read_csv(cfg.data.path)
     X = df.drop(columns=cfg.data.target)
-    for col, mapping in cfg.schema.encoders.items(): 
+    for col, mapping in cfg.schema.encoders.items():
         X[col] = X[col].map(mapping)
     return X.to_numpy(), df[cfg.data.target].to_numpy(), list(X.columns)
+
 
 # here is the metrics that will be logged to MLflow
 def compute_metrics(gam, y_true, y_pred):
@@ -85,16 +91,19 @@ def compute_metrics(gam, y_true, y_pred):
     }
 
 
-# This chunk of code is the MLflow pyfunc wrapper for the GAM model, which allows you to serve the model behind the raw feature schema. +
+# This chunk of code is the MLflow pyfunc wrapper for the GAM model,
+# which allows you to serve the model behind the raw feature schema.
 # It handles loading the model and making predictions based on the input data.
 ##---------------
-# @champion model for the insurance-cost GAM. 
+# @champion model for the insurance-cost GAM.
 ##---------------
 class GamModel(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
         self.gam = cloudpickle.load(open(context.artifacts["gam"], "rb"))
+
     def predict(self, context, model_input, params=None):
         return self.gam.predict(np.asarray(model_input))
+
 
 def log_and_register(gam, cfg):
     with tempfile.TemporaryDirectory() as d:
@@ -123,11 +132,9 @@ def main(cfg: DictConfig) -> None:
 
     X, y, feature_names = load_xy(cfg)
     logger.info("Loaded {} rows, features={}", len(y), feature_names)
-    Xtr, Xva, ytr, yva = train_test_split(
-        X, y, test_size=cfg.data.test_size, random_state=cfg.seed
-    )
-    # the user can specify the model terms in the config file, and this function will build the appropriate pygam terms object for the LinearGAM constructor
-    # e.g., LinearGAM(s(0) + l(1) + f(2)) for a model with a spline on the first feature, a linear term on the second, and a factor term on the third
+    Xtr, Xva, ytr, yva = train_test_split(X, y, test_size=cfg.data.test_size, random_state=cfg.seed)
+    # the user can specify the model terms in the config file,
+    # e.g., LinearGAM(s(0) + l(1) + f(2))
     gam = LinearGAM(build_terms(cfg.model.terms))
     if cfg.gridsearch.enabled:
         lam = np.logspace(cfg.gridsearch.lam_min, cfg.gridsearch.lam_max, cfg.gridsearch.lam_num)
@@ -157,15 +164,16 @@ def main(cfg: DictConfig) -> None:
         mlflow.log_text(OmegaConf.to_yaml(cfg), "config.yaml")
 
         # per-term p-values (scalars, one metric each)
-        for name, p in zip(feature_names + ["intercept"], gam.statistics_["p_values"]):
+        for name, p in zip(feature_names + ["intercept"], gam.statistics_["p_values"], strict=True):
             mlflow.log_metric(f"pval_{name}", float(p))
 
-        # artifacts: partial-effects plot as well as residual diagnostics
-        # plot the partial effects with CI% confidence bands (confirugable via Hydra; defaul = 95%), and log the figure to MLflow
+        # artifacts: partial-effects plot (PEP) as well as residual diagnostics
+        # PEPs with CI confidence bands (confirugable via Hydra; default = 95%)
         fig_pe = plot_partial_effects(gam, feature_names, cfg.ci)
         mlflow.log_figure(fig_pe, "partial_effects.png")
         plt.close(fig_pe)
-        # residual diagnostics; in order to inspect the residuals, we plot them against the fitted values and each feature, and also show a histogram of the residuals
+        # residual diagnostics; in order to inspect the residuals,
+        # we plot them against the fitted values and each feature
         fig_res = plot_residuals(gam, X, y, feature_names)
         mlflow.log_figure(fig_res, "residuals.png")
         plt.close(fig_res)

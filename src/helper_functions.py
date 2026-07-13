@@ -1,15 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+from scipy.spatial.distance import jensenshannon
 from scipy.stats import ks_2samp
 from statsmodels.stats.proportion import proportions_ztest
-from scipy.spatial.distance import jensenshannon
+
 
 # for more details; see https://pygam.readthedocs.io/en/latest/notebooks/quick_start.html
 def plot_partial_effects(gam, feature_names, width):
     n = len(feature_names)
     fig, axes = plt.subplots(1, n, figsize=(4 * n, 3.4))
-    for i, (ax, name) in enumerate(zip(np.atleast_1d(axes), feature_names)):
+    for i, (ax, name) in enumerate(zip(np.atleast_1d(axes), feature_names, strict=True)):
         XX = gam.generate_X_grid(term=i)
         pdep, ci = gam.partial_dependence(term=i, X=XX, width=width)
         ax.plot(XX[:, i], pdep, lw=2, color="C0")
@@ -48,14 +48,17 @@ def plot_residuals(gam, X, y, feature_names):
     fig.tight_layout()
     return fig
 
-#### More helper functions for monitoring and drift detection; z-test for continuous features, log-odds ratio for categorical features; these are used in the monitor.py script to detect drift between reference and current datasets
 
- 
+#### More helper functions for monitoring and drift detection;
+#  z-test for continuous features, log-odds ratio for categorical features;
+#  are used in the monitor.py script to detect drift between reference and current datasets
+
+
 def ks_test(ref, cur, alpha):
-    """Two-sample Kolmogorov-Smirnov test: did the distribution move?
+    """Two-sample Kolmogorov-Smirnov test
     H0: the two samples are drawn from the same distribution
     H1: the two samples are drawn from different distributions"""
-    stat, p = ks_2samp(cur, ref, alternative="two-sided") # two-sided test is the default option; but we specify it explicitly for clarity
+    stat, p = ks_2samp(cur, ref, alternative="two-sided")  # two-sided test is the default option
     return {
         "test": "ks_2samp",
         "shift": round(float(cur.mean() - ref.mean()), 2),
@@ -63,8 +66,8 @@ def ks_test(ref, cur, alpha):
         "p_value": round(float(p), 4),
         "significant": bool(p < alpha),
     }
- 
- 
+
+
 def proptest(ref, cur, positive, alpha):
     """Two-proportion Z-test: did the positive-class rate move?"""
     c = [int((cur == positive).sum()), int((ref == positive).sum())]
@@ -79,12 +82,13 @@ def proptest(ref, cur, positive, alpha):
         "p_value": round(float(p), 4),
         "significant": bool(p < alpha),
     }
- 
+
+
 def js_distance(a, b, bins=20):
     edges = np.linspace(min(a.min(), b.min()), max(a.max(), b.max()), bins + 1)
     p = np.histogram(a, edges)[0] + 1e-9
     q = np.histogram(b, edges)[0] + 1e-9
     # base=2 gives a distance in bits, which is more interpretable than nats (base e)
-    # the Jensen-Shannon distance is symmetric and bounded between 0 and 1, making it a good choice for measuring distributional similarity
-    # the JSD is the square root of the Jensen-Shannon divergence, which is a smoothed and symmetrized version of the Kullback-Leibler divergence
-    return float(jensenshannon(p / p.sum(), q / q.sum(), base=2)) 
+    # the Jensen-Shannon distance is symmetric and bounded  [0, 1];
+    # sqrt of the Jensen-Shannon divergence
+    return float(jensenshannon(p / p.sum(), q / q.sum(), base=2))

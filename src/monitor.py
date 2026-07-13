@@ -1,10 +1,5 @@
 """Monitor a production batch for drift against the reference set.
 
-Scores both the reference and the current batch with the @champion model, then
-builds an Evidently report using Jensen-Shannon distance for numeric drift.
-Saves a shareable HTML report (the thing you record for the GIF) and prints a
-machine-readable verdict.
-
 Run:
   python -m src.monitor                              # default: data_drift.csv
   python -m src.monitor --current data/no_drift.csv  # the quiet control
@@ -17,7 +12,6 @@ Run:
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 import mlflow
@@ -25,10 +19,19 @@ import pandas as pd
 from evidently import DataDefinition, Dataset, Regression, Report
 from evidently.presets import DataDriftPreset, DataSummaryPreset, RegressionPreset
 from loguru import logger
-from src.config import (MLFLOW_URI, MODEL_URI, JSD_THRESHOLD, NUM_COLS, CAT_COLS, TARGET, ENCODERS, ALPHA, BINS)
-from scipy.spatial.distance import jensenshannon
-import numpy as np
+
+from src.config import (
+    ALPHA,
+    CAT_COLS,
+    ENCODERS,
+    JSD_THRESHOLD,
+    MLFLOW_URI,
+    MODEL_URI,
+    NUM_COLS,
+    TARGET,
+)
 from src.helper_functions import js_distance, ks_test, proptest
+
 
 # --- the score() function is tested in tests/test_monitor.py ---
 def score(df: pd.DataFrame, model) -> pd.DataFrame:
@@ -37,14 +40,16 @@ def score(df: pd.DataFrame, model) -> pd.DataFrame:
     enc = df.copy()
     for col, mapping in ENCODERS.items():
         enc[col] = enc[col].map(mapping)
-    out["prediction"] = model.predict(enc[NUM_COLS + CAT_COLS]) # model is the champion, already loaded from MLflow
+    out["prediction"] = model.predict(enc[NUM_COLS + CAT_COLS])  # load @champion
     return out
 
 
 def to_dataset(df: pd.DataFrame) -> Dataset:
     definition = DataDefinition(
-        numerical_columns=NUM_COLS, # numeric columns are the features, not the target; evidently requires this to be explicit
-        categorical_columns=CAT_COLS, # categorical columns are the features, not the target; evidently requires this to be explicit
+        # numeric columns are the features, not the target
+        numerical_columns=NUM_COLS,
+        # categorical columns are the features, not the target
+        categorical_columns=CAT_COLS,
         regression=[Regression(target=TARGET, prediction="prediction")],
     )
     return Dataset.from_pandas(df, data_definition=definition)
@@ -55,7 +60,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     # load the champion model from the MLflow registry (or local path)
     model = mlflow.pyfunc.load_model(MODEL_URI)
     # score both the reference and current batches with the champion model
-    ref = score(pd.read_csv(reference_csv), model) 
+    ref = score(pd.read_csv(reference_csv), model)
     cur = score(pd.read_csv(current_csv), model)
     logger.info("Scored {} reference / {} current rows", len(ref), len(cur))
 
@@ -73,11 +78,12 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     snapshot.save_html(out_html)
     logger.success("Report saved -> {}", out_html)
 
-    jsd = {c: round(js_distance(ref[c].to_numpy(), cur[c].to_numpy()), 3)
-           for c in NUM_COLS + [TARGET]}
+    jsd = {
+        c: round(js_distance(ref[c].to_numpy(), cur[c].to_numpy()), 3) for c in NUM_COLS + [TARGET]
+    }
 
     # feature-level attribution (statsmodels tests) on the raw batches
-    ref_raw = pd.read_csv(reference_csv) # train data
+    ref_raw = pd.read_csv(reference_csv)  # train data
     cur_raw = pd.read_csv(current_csv)
     positive = next(k for k, v in ENCODERS["smoker"].items() if v == 1)
     feat_tests = {
@@ -90,7 +96,8 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     summary = {
         "batch": Path(current_csv).stem,
         "jsd": jsd,
-        "drift_detected": any(v > JSD_THRESHOLD for v in jsd.values()), # if any drift is detected, we flag the batch as drifted
+        # if any drift is detected, we flag the batch as drifted
+        "drift_detected": any(v > JSD_THRESHOLD for v in jsd.values()),
         "feature_tests": feat_tests,
         "drift_sources": drift_sources,
         "report": out_html,
@@ -100,8 +107,14 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     # log Evidently report + JSD + feature tests to one MLflow run
     mlflow.set_experiment("drift_monitoring")
     with mlflow.start_run(run_name=summary["batch"]):
-        mlflow.log_params({"batch": summary["batch"], "reference": reference_csv,
-                           "current": current_csv, "alpha": ALPHA})
+        mlflow.log_params(
+            {
+                "batch": summary["batch"],
+                "reference": reference_csv,
+                "current": current_csv,
+                "alpha": ALPHA,
+            }
+        )
         mlflow.log_metrics({f"jsd_{c}": v for c, v in jsd.items()})
         mlflow.log_metric("drift_detected", int(summary["drift_detected"]))
         mlflow.log_metric("age_shift", feat_tests["age"]["shift"])
@@ -110,10 +123,9 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
         mlflow.log_metric("smoker_pvalue", feat_tests["smoker"]["p_value"])
         mlflow.log_metric("bmi_shift", feat_tests["bmi"]["shift"])
         mlflow.log_metric("bmi_ks_pvalue", feat_tests["bmi"]["p_value"])
-        mlflow.log_artifact(out_html)                         # the Evidently HTML
+        mlflow.log_artifact(out_html)  # the Evidently HTML
         mlflow.log_text(json.dumps(feat_tests, indent=2), "feature_tests.json")
-    logger.success("Logged report + feature tests to MLflow (sources: {})",
-                   drift_sources or "none")
+    logger.success("Logged report + feature tests to MLflow (sources: {})", drift_sources or "none")
     return summary
 
 

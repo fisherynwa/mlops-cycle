@@ -10,20 +10,18 @@ uvicorn src.serve:app --reload
 Then open http://localhost:8000/docs
 """
 
-import os
 from contextlib import asynccontextmanager
-
 from typing import Literal
 
 import mlflow
 import pandas as pd
 from fastapi import FastAPI
-from prometheus_fastapi_instrumentator import Instrumentator
-from prometheus_client import Histogram, Counter
 from loguru import logger
-from src.config import (MLFLOW_URI, MODEL_URI, JSD_THRESHOLD, NUM_COLS, CAT_COLS, TARGET, ENCODERS)
+from prometheus_client import Counter, Histogram
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
+from src.config import CAT_COLS, ENCODERS, MLFLOW_URI, MODEL_URI, NUM_COLS
 
 # smoker encoding must match training: category codes are alphabetical -> no=0, yes=1
 
@@ -45,10 +43,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="insurance-cost model", lifespan=lifespan)
 
 # --- Prometheus metrics ---
-Instrumentator().instrument(app).expose(app)   # auto /metrics: request count, latency, status
-PRED_CHARGE = Histogram("prediction_charge", "Predicted insurance charge",
-                        buckets=[5000, 10000, 20000, 30000, 40000, 60000])
+Instrumentator().instrument(app).expose(app)  # auto /metrics: request count, latency, status
+PRED_CHARGE = Histogram(
+    "prediction_charge",
+    "Predicted insurance charge",
+    buckets=[5000, 10000, 20000, 30000, 40000, 60000],
+)
 PREDICTIONS = Counter("predictions_total", "Predictions served", ["model_version"])
+
 
 # pydantic models for request and response bodies, with validation and examples
 class ClaimFeatures(BaseModel):
@@ -75,9 +77,9 @@ def model_info() -> dict:
 @app.post("/predict", response_model=Prediction)
 def predict(x: ClaimFeatures) -> Prediction:
     row = pd.DataFrame([x.model_dump()])
-    for col, mapping in ENCODERS.items():          # encode every categorical from config
+    for col, mapping in ENCODERS.items():  # encode every categorical from config
         row[col] = row[col].map(mapping)
-    row = row[NUM_COLS + CAT_COLS]                  # column order must match training
+    row = row[NUM_COLS + CAT_COLS]  # column order must match training
     charge = float(_state["model"].predict(row)[0])
     PRED_CHARGE.observe(charge)
     PREDICTIONS.labels(model_version=str(_state["version"])).inc()

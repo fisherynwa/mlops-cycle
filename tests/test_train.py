@@ -1,7 +1,6 @@
 # run python -m pytest tests/test_train.py -v
-
 from omegaconf import OmegaConf
-from pygam.terms import SplineTerm, LinearTerm, FactorTerm
+from pygam.terms import FactorTerm, LinearTerm, SplineTerm
 
 from src.train import build_terms
 
@@ -26,20 +25,20 @@ class TestBuildTerms:
 
     def test_term_types_match_config(self):
         terms = build_terms(cfg(FULL_SPEC))
-        assert isinstance(terms[0], SplineTerm)   # s -> spline
-        assert isinstance(terms[1], LinearTerm)   # l -> linear
-        assert isinstance(terms[2], FactorTerm)   # f -> factor
+        assert isinstance(terms[0], SplineTerm)  # s -> spline
+        assert isinstance(terms[1], LinearTerm)  # l -> linear
+        assert isinstance(terms[2], FactorTerm)  # f -> factor
 
     def test_features_map_to_columns(self):
         terms = build_terms(cfg(FULL_SPEC))
         assert [t.feature for t in terms] == [0, 1, 2]
 
     def test_spline_uses_configured_n_splines(self):
-        terms = build_terms(cfg([{"kind": "s", "col": 0, "n_splines": 15},
-                                 {"kind": "l", "col": 1}]))
+        terms = build_terms(
+            cfg([{"kind": "s", "col": 0, "n_splines": 15}, {"kind": "l", "col": 1}])
+        )
         assert terms[0].n_splines == 15
 
     def test_spline_defaults_n_splines_to_20(self):
-        terms = build_terms(cfg([{"kind": "s", "col": 0},
-                                 {"kind": "l", "col": 1}]))
+        terms = build_terms(cfg([{"kind": "s", "col": 0}, {"kind": "l", "col": 1}]))
         assert terms[0].n_splines == 20

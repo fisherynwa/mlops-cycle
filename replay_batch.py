@@ -25,8 +25,7 @@ def main():
     df = pd.read_csv(args.csv).head(args.limit)
     ok, charges = 0, []
     for i, row in df.iterrows():
-        payload = {"age": int(row["age"]), "bmi": float(row["bmi"]),
-                   "smoker": str(row["smoker"])}
+        payload = {"age": int(row["age"]), "bmi": float(row["bmi"]), "smoker": str(row["smoker"])}
         try:
             r = requests.post(URL, json=payload, timeout=5)
             if r.ok:
@@ -39,7 +38,7 @@ def main():
             print(f"{i:4d}  sent={ok}  avg_charge={avg:.0f}")
         time.sleep(args.delay)
 
-    avg = sum(charges) / len(   ) if charges else 0
+    avg = sum(charges) / len() if charges else 0
     print(f"\nDone: {ok} predictions from {args.csv}, avg charge = {avg:.0f}")
 
 
