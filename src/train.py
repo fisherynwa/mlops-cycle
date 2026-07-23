@@ -1,7 +1,7 @@
 """Train the GAM — config-driven (Hydra), logged (loguru + MLflow).
 
-Every run records scalar metrics, per-term p-values, and three artifacts:
-a partial-effects table, a partial-effects plot (with 95% bands), and residual
+Every run records scalar metrics, per-term p-values, and 2 artifacts:
+a partial-effects plot (with CI% bands) and residual
 diagnostics — all visible under the run's Artifacts tab in the MLflow UI.
 
 Run:
@@ -57,7 +57,7 @@ TERM_BUILDERS = {
 }
 
 
-# this is a helper function to build the GAM terms from the config file, which is a list of dicts
+# this is a helper function to build our GAM terms from the config file, which is a list of dicts
 def build_terms(term_cfgs):
     """Turn the YAML term list into a pygam terms object: s(0, n_splines=20) + l(1) + f(2)."""
     terms = TERM_BUILDERS[term_cfgs[0].kind](term_cfgs[0])
@@ -77,7 +77,7 @@ def load_xy(cfg):
     return X.to_numpy(), df[cfg.data.target].to_numpy(), list(X.columns)
 
 
-# here is the metrics that will be logged to MLflow
+# Here are the metrics that will be logged to MLflow
 def compute_metrics(gam, y_true, y_pred):
     return {
         "r2": round(float(r2_score(y_true, y_pred)), 3),
@@ -91,7 +91,7 @@ def compute_metrics(gam, y_true, y_pred):
     }
 
 
-# This chunk of code is the MLflow pyfunc wrapper for the GAM model,
+# This chunk of code is the MLflow pyfunc wrapper for this project's (GAM) model,
 # which allows you to serve the model behind the raw feature schema.
 # It handles loading the model and making predictions based on the input data.
 ##---------------
@@ -168,7 +168,7 @@ def main(cfg: DictConfig) -> None:
             mlflow.log_metric(f"pval_{name}", float(p))
 
         # artifacts: partial-effects plot (PEP) as well as residual diagnostics
-        # PEPs with CI confidence bands (confirugable via Hydra; default = 95%)
+        # PEPs with CI confidence bands (conf. via Hydra; default = 95%)
         fig_pe = plot_partial_effects(gam, feature_names, cfg.ci)
         mlflow.log_figure(fig_pe, "partial_effects.png")
         plt.close(fig_pe)
@@ -177,7 +177,7 @@ def main(cfg: DictConfig) -> None:
         fig_res = plot_residuals(gam, X, y, feature_names)
         mlflow.log_figure(fig_res, "residuals.png")
         plt.close(fig_res)
-        # register the model if requested (and optionally promote to champion)
+        # register the model if requested (and optionally promote to @champion)
         log_and_register(gam, cfg)
 
     logger.success("{} -> {}", cfg.model.name, metrics)
