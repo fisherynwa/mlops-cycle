@@ -25,6 +25,7 @@ dependencies = [
     "pygam>=0.12.0",
     "requests>=2.34.2",
     "pytest>=9.1.1",
+    "seaborn>=0.13.2",
 ]
 
 [dependency-groups]
