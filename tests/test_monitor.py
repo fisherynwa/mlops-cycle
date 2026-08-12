@@ -1,12 +1,15 @@
 """Unit tests for monitor.score — encoding, column order, prediction, no mutation.
 
-Uses a fake model that records the DataFrame it receives, so we can assert the
-encoding and column order are correct without needing a real MLflow champion.
-
 Run:
 
 python -m pytest tests/test_monitor.py -v
 """
+
+import numpy as np
+import pytest
+from scipy.stats import ks_2samp, anderson_ksamp
+from src.helper_functions import ecdf_plot, ad_test, proptest    # adjust import to your layout
+
 
 import numpy as np
 import pandas as pd
@@ -15,6 +18,9 @@ import pytest
 from src.config import CAT_COLS, ENCODERS, NUM_COLS
 from src.helper_functions import ks_test
 from src.monitor import score
+
+ALPHA = 0.05
+
 
 
 class FakeModel:
@@ -70,20 +76,166 @@ class TestScore:
             assert col in out.columns  # charges, age, bmi, smoker all still there
 
 
-class TestKS:
-    """Tests for the ks_test() function: flags shifted data, quiet on same distribution."""
+### Test ecdf_plot() in helper_functions.py, which is used by monitor.score() to compute the KS distance and plot ECDFs.
 
-    def setup_method(self):
-        rng = np.random.default_rng(0)
-        self.ref = rng.normal(40, 9, 1000)
+def test_returns_python_float(tmp_path):
+    d = ecdf_plot([1.0, 2, 3], [2.0, 3, 4], "x", tmp_path / "e.png")
+    assert isinstance(d, float)          # float(D), not np.float64 -> JSON-safe for MLflow
+    assert 0.0 <= d <= 1.0
 
-    def test_ks_flags_shifted_data(self):
-        cur = self.ref + 25  # clearly shifted
-        result = ks_test(self.ref, cur, alpha=0.05)
-        assert result["significant"] is True
 
-    def test_ks_quiet_on_same_distribution(self):
-        rng = np.random.default_rng(1)
-        cur = rng.normal(40, 9, 1000)  # same distribution
-        result = ks_test(self.ref, cur, alpha=0.01)
-        assert result["significant"] is False
+def test_writes_file(tmp_path):
+    p = tmp_path / "ecdf.png"
+    ecdf_plot([1.0, 2, 3], [1.0, 2, 3], "x", p)
+    assert p.exists() and p.stat().st_size > 0
+
+
+def test_identical_samples_zero_distance(tmp_path):
+    d = ecdf_plot([1.0, 2, 3, 4], [1.0, 2, 3, 4], "x", tmp_path / "e.png")
+    assert d == 0.0                      # no gap between identical ECDFs
+
+
+def test_disjoint_samples_max_distance(tmp_path):
+    d = ecdf_plot([1.0, 2, 3], [10.0, 11, 12], "x", tmp_path / "e.png")
+    assert d == pytest.approx(1.0)       # fully separated -> D = 1
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_matches_scipy_ks_2samp(tmp_path, seed):
+    rng = np.random.default_rng(seed)
+    ref = rng.normal(0, 1, 200)
+    cur = rng.normal(0.4, 1, 150)        # unequal sizes on purpose
+    d = ecdf_plot(ref, cur, "x", tmp_path / "e.png")
+    assert d == pytest.approx(ks_2samp(ref, cur).statistic, abs=1e-9)
+
+
+def test_unequal_lengths_ok(tmp_path):
+    d = ecdf_plot(np.arange(1000.0), np.arange(3.0), "x", tmp_path / "e.png")
+    assert 0.0 <= d <= 1.0
+
+
+#####################################
+##  Compare KS D from ecdf_plot vs scipy.stats.ks_2samp across many cases."""
+#####################################
+CASES = {
+    "identical":      (np.arange(1, 11.0),            np.arange(1, 11.0)),
+    "disjoint":       (np.arange(1, 11.0),            np.arange(20, 30.0)),
+    "shift":          (np.arange(1, 11.0),            np.arange(4, 14.0)),
+    "unequal_sizes":  (np.arange(1, 101.0),           np.arange(1, 31.0)),
+    "heavy_ties":     (np.array([1, 1, 1, 2, 2, 3.]), np.array([2, 2, 3, 3, 3, 4.])),
+    "one_off_shift":  (np.arange(1, 11.0),            np.arange(2, 12.0)),
+}
+
+
+@pytest.mark.parametrize("name", list(CASES))
+def test_D_matches_scipy_fixed_cases(tmp_path, name):
+    ref, cur = CASES[name]
+    project_implementation = ecdf_plot(ref, cur, name, tmp_path / f"{name}.png")
+    scipy_implementation = ks_2samp(ref, cur).statistic
+    assert project_implementation == pytest.approx(scipy_implementation, abs=1e-12), f"{name}: {project_implementation} vs {scipy_implementation}"
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_D_matches_scipy_random(tmp_path, seed):
+    rng = np.random.default_rng(seed)
+    n, m = rng.integers(30, 400), rng.integers(30, 400)
+    ref = rng.normal(0, 1, n)
+    cur = rng.normal(rng.uniform(-1, 1), rng.uniform(0.5, 2), m)  # random loc + scale
+    project_implementation = ecdf_plot(ref, cur, "x", tmp_path / f"{seed}.png")
+    scipy_implementation = ks_2samp(ref, cur).statistic
+    assert project_implementation == pytest.approx(scipy_implementation, abs=1e-12), f"{seed}: {project_implementation} vs {scipy_implementation}"
+
+
+def test_D_matches_scipy_with_ties(tmp_path):
+    rng = np.random.default_rng(0)
+    ref = rng.integers(0, 10, 500).astype(float)   # integer -> lots of ties
+    cur = rng.integers(2, 12, 500).astype(float)
+    project_implementation = ecdf_plot(ref, cur, "x", tmp_path / "ties.png")
+    scipy_implementation = ks_2samp(ref, cur).statistic
+    assert project_implementation == pytest.approx(scipy_implementation, abs=1e-12), f"ties: {project_implementation} vs {scipy_implementation}"
+
+
+
+
+##########################
+## Test ad_test() and proptest() in helper_functions.py
+#########################
+# ----------------------------- ad_test -----------------------------
+def test_ad_keys_and_types():
+    rng = np.random.default_rng(0)
+    r = ad_test(rng.normal(size=200), rng.normal(0.5, size=200), ALPHA)
+    assert set(r) == {"test", "statistic", "p_value", "shift", "significant"}
+    assert isinstance(r["statistic"], float) and isinstance(r["p_value"], float)
+    assert isinstance(r["shift"], float) and isinstance(r["significant"], bool)
+    assert r["test"] == "anderson_darling"
+
+def test_ad_no_drift_not_significant():
+    rng = np.random.default_rng(7)
+    r = ad_test(rng.normal(size=500), rng.normal(size=500), ALPHA)  # same distribution
+    assert r["significant"] is False
+    assert r["p_value"] > ALPHA
+
+def test_ad_clear_drift_significant():
+    rng = np.random.default_rng(1)
+    r = ad_test(rng.normal(0, 1, 400), rng.normal(3, 1, 400), ALPHA)
+    assert r["significant"] is True
+
+def test_ad_shift_sign_matches_direction():
+    rng = np.random.default_rng(2)
+    up = ad_test(rng.normal(0, 1, 300), rng.normal(2, 1, 300), ALPHA)
+    down = ad_test(rng.normal(0, 1, 300), rng.normal(-2, 1, 300), ALPHA)
+    assert up["shift"] > 0 and down["shift"] < 0
+
+def test_ad_statistic_matches_scipy():
+    rng = np.random.default_rng(3)
+    ref, cur = rng.normal(size=150), rng.normal(0.4, size=120)  # unequal sizes
+    got = ad_test(ref, cur, ALPHA)["statistic"]
+    assert got == pytest.approx(anderson_ksamp([ref, cur]).statistic, abs=1e-9)
+
+# ----------------------------- proptest ----------------------------
+def test_prop_keys_and_types():
+    ref = pd.Series(["yes"]*20 + ["no"]*80)
+    cur = pd.Series(["yes"]*40 + ["no"]*60)
+    r = proptest(ref, cur, "yes", ALPHA)
+    assert set(r) == {"test", "ref_rate", "cur_rate", "rate_shift", "z", "p_value", "significant"}
+    assert isinstance(r["p_value"], float) and isinstance(r["significant"], bool)
+
+def test_prop_rates_and_shift():
+    ref = pd.Series(["yes"]*20 + ["no"]*80)   # 20%
+    cur = pd.Series(["yes"]*45 + ["no"]*55)   # 45%
+    r = proptest(ref, cur, "yes", ALPHA)
+    assert r["ref_rate"] == pytest.approx(0.20)
+    assert r["cur_rate"] == pytest.approx(0.45)
+    assert r["rate_shift"] == pytest.approx(0.25)
+
+def test_prop_no_change_not_significant():
+    ref = pd.Series(["yes"]*300 + ["no"]*700)
+    cur = pd.Series(["yes"]*300 + ["no"]*700)  # identical rates
+    assert proptest(ref, cur, "yes", ALPHA)["significant"] is False
+
+def test_prop_big_change_significant():
+    ref = pd.Series(["yes"]*200 + ["no"]*800)  # 20%
+    cur = pd.Series(["yes"]*500 + ["no"]*500)  # 50%
+    assert proptest(ref, cur, "yes", ALPHA)["significant"] is True
+
+# --------------------- feat_tests assembly -------------------------
+def _feat_tests(ref_raw, cur_raw, positive, alpha):
+    return {
+        "age": ad_test(ref_raw["age"].to_numpy(), cur_raw["age"].to_numpy(), alpha),
+        "smoker": proptest(ref_raw["smoker"], cur_raw["smoker"], positive, alpha),
+        "bmi": ad_test(ref_raw["bmi"].to_numpy(), cur_raw["bmi"].to_numpy(), alpha),
+    }
+
+def test_feat_tests_structure_and_drift_sources():
+    rng = np.random.default_rng(5)
+    ref = pd.DataFrame({"age": rng.integers(20, 60, 300).astype(float),
+                        "bmi": rng.normal(28, 5, 300),
+                        "smoker": ["yes"]*60 + ["no"]*240})
+    cur = pd.DataFrame({"age": rng.integers(30, 70, 300).astype(float),  # shifted up
+                        "bmi": rng.normal(31, 5, 300),                   # shifted up
+                        "smoker": ["yes"]*150 + ["no"]*150})             # shifted up
+    ft = _feat_tests(ref, cur, "yes", ALPHA)
+    assert set(ft) == {"age", "smoker", "bmi"}
+    assert all("significant" in v for v in ft.values())   # drift_sources relies on this
+    drift_sources = [f for f, r in ft.items() if r["significant"]]
+    assert drift_sources == ["age", "smoker", "bmi"]
