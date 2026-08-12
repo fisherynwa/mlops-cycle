@@ -3,11 +3,15 @@
 Run:
   python -m src.monitor                              # default: data_drift.csv
   python -m src.monitor --current data/no_drift.csv  # the quiet control
-
-  mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5500 --workers 1
-
-  $env:MLFLOW_TRACKING_URI = "http://localhost:5555"
   python -m src.monitor --current data/data_drift.csv --out reports/drift_report.html
+
+MLflow tracking URI (via MLFLOW_TRACKING_URI env var or cfg.serve.mlflow.tracking_uri):
+  * docker-compose: server listens on 5000 in-container, published as "5555:5000".
+      - from the host:                 http://localhost:5555
+      - from another compose service:  http://mlflow:5000   (service name + internal port)
+  * local (no docker):
+      mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
+      $env:MLFLOW_TRACKING_URI = "http://localhost:5000"
 """
 
 import argparse
@@ -18,19 +22,23 @@ import mlflow
 import pandas as pd
 from evidently import DataDefinition, Dataset, Regression, Report
 from evidently.presets import DataDriftPreset, DataSummaryPreset, RegressionPreset
+
+import sys
 from loguru import logger
 
+logger.remove()
+logger.add(sys.stdout, level="INFO")
 from src.config import (
     ALPHA,
     CAT_COLS,
     ENCODERS,
-    JSD_THRESHOLD,
     MLFLOW_URI,
     MODEL_URI,
     NUM_COLS,
     TARGET,
+    WASSERSTEIN_STD_THRESHOLD,  # standardized threshold for the Evidently report only
 )
-from src.helper_functions import js_distance, ks_test, proptest
+from src.helper_functions import ad_test, ecdf_plot, proptest, wasserstein_dist
 
 
 # --- the score() function is tested in tests/test_monitor.py ---
@@ -46,15 +54,21 @@ def score(df: pd.DataFrame, model) -> pd.DataFrame:
 
 def to_dataset(df: pd.DataFrame) -> Dataset:
     definition = DataDefinition(
-        # numeric columns are the features, not the target
         numerical_columns=NUM_COLS,
-        # categorical columns are the features, not the target
         categorical_columns=CAT_COLS,
         regression=[Regression(target=TARGET, prediction="prediction")],
     )
     return Dataset.from_pandas(df, data_definition=definition)
 
 
+# Evidently defaults (as of 2026 docs):
+#   reference size   numerical (n_unique>5)          categorical / low-cardinality
+#   <= 1000 rows     two-sample KS (p<0.05)          Chi-square; binary -> Z-test
+#   >  1000 rows     Wasserstein (>=0.1)             Jensen-Shannon (>=0.1)
+# NOTE: Evidently's "wasserstein" is STANDARDIZED (distance / reference SD), so its
+# 0.1-style threshold is unitless. That is intentionally the *standardized* threshold for the Evidently report only. 
+# The raw (unstandardized) Wasserstein is reported in the summary and logged to MLflow, 
+# so it can be compared against a PER-COLUMN threshold in the column's own units.
 def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     mlflow.set_tracking_uri(MLFLOW_URI)
     # load the champion model from the MLflow registry (or local path)
@@ -66,7 +80,8 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
 
     report = Report(
         metrics=[
-            DataDriftPreset(num_method="jensenshannon", num_threshold=JSD_THRESHOLD),
+            # numerical columns by means of the Wasserstein distance (standardized inside Evidently)
+            DataDriftPreset(num_method="wasserstein", num_threshold=WASSERSTEIN_STD_THRESHOLD),
             RegressionPreset(),
             DataSummaryPreset(),
         ],
@@ -74,37 +89,54 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     )
     snapshot = report.run(to_dataset(cur), to_dataset(ref))
 
-    Path(out_html).parent.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(out_html).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
     snapshot.save_html(out_html)
-    logger.success("Report saved -> {}", out_html)
+    logger.success("Report saved: {}", out_html)
 
-    jsd = {
-        c: round(js_distance(ref[c].to_numpy(), cur[c].to_numpy()), 3) for c in NUM_COLS + [TARGET]
+    # drift metric: RAW (unstandardized) Wasserstein per numeric col 
+    wass = {
+        c: round(wasserstein_dist(ref[c].to_numpy(), cur[c].to_numpy()), 3)
+        for c in NUM_COLS + [TARGET]
     }
 
-    # feature-level attribution (statsmodels tests) on the raw batches
-    ref_raw = pd.read_csv(reference_csv)  # train data
+    # feature-level attribution on the raw batches:
+    #   numeric through Anderson-Darling (tail-sensitive; replaces KS)
+    #   binary by means of proportion / Z-test
+    ref_raw = pd.read_csv(reference_csv)
     cur_raw = pd.read_csv(current_csv)
     positive = next(k for k, v in ENCODERS["smoker"].items() if v == 1)
     feat_tests = {
-        "age": ks_test(ref_raw["age"].to_numpy(), cur_raw["age"].to_numpy(), ALPHA),
+        "age": ad_test(ref_raw["age"].to_numpy(), cur_raw["age"].to_numpy(), ALPHA),
         "smoker": proptest(ref_raw["smoker"], cur_raw["smoker"], positive, ALPHA),
-        "bmi": ks_test(ref_raw["bmi"].to_numpy(), cur_raw["bmi"].to_numpy(), ALPHA),
+        "bmi": ad_test(ref_raw["bmi"].to_numpy(), cur_raw["bmi"].to_numpy(), ALPHA),
     }
     drift_sources = [f for f, r in feat_tests.items() if r["significant"]]
 
+    # ECDF diagnostics (the KS picture and its effect size D) for the numeric columns; these are artifacts in the report
+    ks_d, ecdf_paths = {}, {}
+    for col in NUM_COLS:
+        path = str(out_dir / f"ecdf_{col}.png")
+        ks_d[col] = round(
+            ecdf_plot(ref_raw[col].to_numpy(), cur_raw[col].to_numpy(), col, path), 3
+        )
+        ecdf_paths[col] = path
+
     summary = {
         "batch": Path(current_csv).stem,
-        "jsd": jsd,
-        # if any drift is detected, we flag the batch as drifted
-        "drift_detected": any(v > JSD_THRESHOLD for v in jsd.values()),
+        "wasserstein": wass,  # raw distances, reported as magnitudes (non-zero => some drift)
+        "ks_d": ks_d,         # KS statistic from the ECDF plots (diagnostic)
+        # decision comes from the tests' p-values:
+        # the AD test for numeric, proportion for binary);
+        # the Wasserstein distance is reported, not a gate -> also covers categorical drift
+        "drift_detected": bool(drift_sources),
         "feature_tests": feat_tests,
         "drift_sources": drift_sources,
         "report": out_html,
     }
     logger.info("Summary: {}", json.dumps(summary))
 
-    # log Evidently report + JSD + feature tests to one MLflow run
+    # log Evidently report + metrics + feature tests + ECDFs to one MLflow run
     mlflow.set_experiment("drift_monitoring")
     with mlflow.start_run(run_name=summary["batch"]):
         mlflow.log_params(
@@ -115,17 +147,26 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
                 "alpha": ALPHA,
             }
         )
-        mlflow.log_metrics({f"jsd_{c}": v for c, v in jsd.items()})
+        # raw Wasserstein per numeric column (+ target)
+        mlflow.log_metrics({f"wasserstein_{c}": v for c, v in wass.items()})
         mlflow.log_metric("drift_detected", int(summary["drift_detected"]))
+        # Anderson-Darling (replaces KS) for the numeric features
         mlflow.log_metric("age_shift", feat_tests["age"]["shift"])
-        mlflow.log_metric("age_ks_pvalue", feat_tests["age"]["p_value"])
+        mlflow.log_metric("age_ad_statistic", feat_tests["age"]["statistic"])
+        mlflow.log_metric("age_ad_pvalue", feat_tests["age"]["p_value"])
+        mlflow.log_metric("bmi_shift", feat_tests["bmi"]["shift"])
+        mlflow.log_metric("bmi_ad_statistic", feat_tests["bmi"]["statistic"]) # track effect size too
+        mlflow.log_metric("bmi_ad_pvalue", feat_tests["bmi"]["p_value"])
+        # proportion test (kept) for the binary feature
         mlflow.log_metric("smoker_rate_shift", feat_tests["smoker"]["rate_shift"])
         mlflow.log_metric("smoker_pvalue", feat_tests["smoker"]["p_value"])
-        mlflow.log_metric("bmi_shift", feat_tests["bmi"]["shift"])
-        mlflow.log_metric("bmi_ks_pvalue", feat_tests["bmi"]["p_value"])
+        # ECDF artifacts + their KS D (the KS diagnostic, per request)
+        for col in NUM_COLS:
+            mlflow.log_metric(f"{col}_ks_d", ks_d[col])
+            mlflow.log_artifact(ecdf_paths[col])
         mlflow.log_artifact(out_html)  # the Evidently HTML
         mlflow.log_text(json.dumps(feat_tests, indent=2), "feature_tests.json")
-    logger.success("Logged report + feature tests to MLflow (sources: {})", drift_sources or "none")
+    logger.success("Logged report + AD tests + ECDFs to MLflow (sources: {})", drift_sources or "none")
     return summary
 
 

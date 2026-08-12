@@ -4,7 +4,7 @@ mlflow:
   registry_name: insurance-cost
   
 monitor:
-  jsd_threshold: 0.1
+  wasserstein_std_threshold: 0.1 # Evidently report (standardized)
   alpha: 0.05
   bins: 20
   reference: data/reference.csv

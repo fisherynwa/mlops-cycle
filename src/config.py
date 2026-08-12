@@ -21,7 +21,7 @@ MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", cfg.serve.mlflow.tracking_uri)  # 
 # MODEL_URI is the path to the champion model in the MLflow registry
 MODEL_URI = os.getenv("MODEL_URI", cfg.serve.mlflow.model_uri)
 REGISTRY_NAME = cfg.serve.mlflow.registry_name
-JSD_THRESHOLD = float(cfg.serve.monitor.jsd_threshold)
+WASSERSTEIN_STD_THRESHOLD = float(cfg.serve.monitor.wasserstein_std_threshold)
 NUM_COLS = list(cfg.schema.num_cols)
 CAT_COLS = list(cfg.schema.cat_cols)
 TARGET = str(cfg.schema.target)
