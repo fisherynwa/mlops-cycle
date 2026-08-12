@@ -11,7 +11,7 @@
 [![CI](https://github.com/fisherynwa/mlops-cycle/actions/workflows/ci.yml/badge.svg)](https://github.com/fisherynwa/mlops-cycle/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-An end-to-end MLOps pipeline that predicts insurance charges with a **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a (live) prediction API, including experiment tracking, a model registry, drift monitoring, and observability dashboards
+An end-to-end MLOps pipeline that predicts insurance charges via a **Generalized Additive Model (GAM)**. This repo showcases the full lifecycle from configurable training (by means of Hydra) to a (live) prediction API, including experiment tracking, a model registry, drift monitoring, and observability dashboards
 
 
 ---
@@ -43,10 +43,13 @@ Each piece is decoupled through the **MLflow model registry**: the trainer *writ
 ## Key design decisions
 
 - **GAM over black-box** -- interpretability. Each prediction decomposes into per-feature contributions (`intercept + splie(age, 15) + linear(bmi) + f(smoker)`).
-- **Model selection by the Akaike information criterion (AIC)** -- the linear-bmi model (`s(0, n_splines=15)+l(1)+f(2)`) beat the spline-bmi variant in the context of the AIC, for equivalent fit. BMI's effect is genuinely near-linear; spending flexibility on it was wasteful.
+- **Model selection by the Akaike information criterion (AIC)** -- the linear-bmi (in-sample) model (`s(0, n_splines=15)+l(1)+f(2)`) beat the spline-bmi variant in the context of the AIC, for equivalent fit. BMI's effect is genuinely near-linear; spending flexibility on it was wasteful.
 - **Champion / challenger registry** — models register as `@challenger`; promotion to `@champion` is an explicit, gated step. Serving always loads the current champion by alias (e..g., `v1`).
-- **Drift attribution** — beyond a yes/no drift verdict by means of the Jensen-Shannon distance, per-feature statistical tests (two-sample Kolmogorov-Smirnov for `age` and `bmi`, a two-proportion Z-test for the binary `smoker`) perform statistical inference.
+- **Drift attribution** -- beyond a yes/no drift verdict, the raw (unstandardized) Wasserstein distance reports the magnitude of shift per numeric feature, while per-feature statistical tests drive the decision: a two-sample Anderson–Darling test for `age` and `bmi` (more sensitive than the KS to differences in the tails; check out the "/docs/ks_vs_ad_power.png" plot), and a two-proportion Z-test for the binary `smoker`. The ECDF (empirical cumulative density function)  (with its KS gap) is logged for each numeric feature as a visual diagnostic alongside their (hypothesis) tests.
 
+
+![age ECDF](docs/ecdf_age.png)
+![bmi ECDF](docs/ecdf_bmi.png)
 ---
 
 ## Project structure
