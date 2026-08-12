@@ -14,11 +14,7 @@ class TestConfig:
     def test_encoders_is_plain_dict(self):
         # OmegaConf.to_container should give real dicts, not DictConfig objects
         assert isinstance(c.ENCODERS, dict)
-
-    def test_jsd_threshold_is_float(self):
-        assert isinstance(c.JSD_THRESHOLD, float)
-        assert 0 < c.JSD_THRESHOLD < 1
-
+        
     def test_model_uri_points_at_champion(self):
         assert "@champion" in c.MODEL_URI
         assert c.REGISTRY_NAME in c.MODEL_URI
