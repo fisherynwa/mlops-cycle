@@ -6,17 +6,12 @@ python -m pytest tests/test_monitor.py -v
 """
 
 import numpy as np
-import pytest
-from scipy.stats import ks_2samp, anderson_ksamp
-from src.helper_functions import ecdf_plot, ad_test, proptest    # adjust import to your layout
-
-
-import numpy as np
 import pandas as pd
 import pytest
+from scipy.stats import anderson_ksamp, ks_2samp
 
 from src.config import CAT_COLS, ENCODERS, NUM_COLS
-from src.helper_functions import ks_test
+from src.helper_functions import ad_test, ecdf_plot, proptest  # adjust import to your layout
 from src.monitor import score
 
 ALPHA = 0.05
@@ -76,7 +71,7 @@ class TestScore:
             assert col in out.columns  # charges, age, bmi, smoker all still there
 
 
-### Test ecdf_plot() in helper_functions.py, which is used by monitor.score() to compute the KS distance and plot ECDFs.
+### Test ecdf_plot() in helper_functions.py, which is used by monitor.score()
 
 def test_returns_python_float(tmp_path):
     d = ecdf_plot([1.0, 2, 3], [2.0, 3, 4], "x", tmp_path / "e.png")
@@ -130,9 +125,9 @@ CASES = {
 @pytest.mark.parametrize("name", list(CASES))
 def test_D_matches_scipy_fixed_cases(tmp_path, name):
     ref, cur = CASES[name]
-    project_implementation = ecdf_plot(ref, cur, name, tmp_path / f"{name}.png")
-    scipy_implementation = ks_2samp(ref, cur).statistic
-    assert project_implementation == pytest.approx(scipy_implementation, abs=1e-12), f"{name}: {project_implementation} vs {scipy_implementation}"
+    project = ecdf_plot(ref, cur, name, tmp_path / f"{name}.png")
+    scipy_impl = ks_2samp(ref, cur).statistic
+    assert project == pytest.approx(scipy_impl, abs=1e-12), f"{name}: {project} vs {scipy_impl}"
 
 
 @pytest.mark.parametrize("seed", range(20))
@@ -141,20 +136,18 @@ def test_D_matches_scipy_random(tmp_path, seed):
     n, m = rng.integers(30, 400), rng.integers(30, 400)
     ref = rng.normal(0, 1, n)
     cur = rng.normal(rng.uniform(-1, 1), rng.uniform(0.5, 2), m)  # random loc + scale
-    project_implementation = ecdf_plot(ref, cur, "x", tmp_path / f"{seed}.png")
-    scipy_implementation = ks_2samp(ref, cur).statistic
-    assert project_implementation == pytest.approx(scipy_implementation, abs=1e-12), f"{seed}: {project_implementation} vs {scipy_implementation}"
+    project = ecdf_plot(ref, cur, "x", tmp_path / f"{seed}.png")
+    scipy_impl = ks_2samp(ref, cur).statistic
+    assert project == pytest.approx(scipy_impl, abs=1e-12), f"{seed}: {project} vs {scipy_impl}"
 
 
 def test_D_matches_scipy_with_ties(tmp_path):
     rng = np.random.default_rng(0)
     ref = rng.integers(0, 10, 500).astype(float)   # integer -> lots of ties
     cur = rng.integers(2, 12, 500).astype(float)
-    project_implementation = ecdf_plot(ref, cur, "x", tmp_path / "ties.png")
-    scipy_implementation = ks_2samp(ref, cur).statistic
-    assert project_implementation == pytest.approx(scipy_implementation, abs=1e-12), f"ties: {project_implementation} vs {scipy_implementation}"
-
-
+    project = ecdf_plot(ref, cur, "x", tmp_path / "ties.png")
+    scipy_impl = ks_2samp(ref, cur).statistic
+    assert project == pytest.approx(scipy_impl, abs=1e-12), f"ties: {project} vs {scipy_impl}"
 
 
 ##########################

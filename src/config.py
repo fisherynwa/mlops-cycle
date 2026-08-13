@@ -1,8 +1,13 @@
 import os
+import sys
 
 from hydra import compose, initialize
 from hydra.core.global_hydra import GlobalHydra
+from loguru import logger
 from omegaconf import OmegaConf
+
+logger.remove()
+logger.add(sys.stdout, level="INFO")
 
 if not OmegaConf.has_resolver("cwd"):
     OmegaConf.register_new_resolver("cwd", lambda: os.getcwd().replace(os.sep, "/"))
@@ -25,7 +30,6 @@ WASSERSTEIN_STD_THRESHOLD = float(cfg.serve.monitor.wasserstein_std_threshold)
 NUM_COLS = list(cfg.schema.num_cols)
 CAT_COLS = list(cfg.schema.cat_cols)
 TARGET = str(cfg.schema.target)
-# python -c "from src.config import ENCODERS;; print(ENCODERS;)"
 # easy to use in the monitor.py and serve.py code for encoding categorical features
 ENCODERS = OmegaConf.to_container(cfg.schema.encoders)
 ALPHA = float(cfg.serve.monitor.alpha)

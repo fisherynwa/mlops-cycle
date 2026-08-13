@@ -22,12 +22,8 @@ import mlflow
 import pandas as pd
 from evidently import DataDefinition, Dataset, Regression, Report
 from evidently.presets import DataDriftPreset, DataSummaryPreset, RegressionPreset
-
-import sys
 from loguru import logger
 
-logger.remove()
-logger.add(sys.stdout, level="INFO")
 from src.config import (
     ALPHA,
     CAT_COLS,
@@ -65,8 +61,9 @@ def to_dataset(df: pd.DataFrame) -> Dataset:
 #   reference size   numerical (n_unique>5)          categorical / low-cardinality
 #   <= 1000 rows     two-sample KS (p<0.05)          Chi-square; binary -> Z-test
 #   >  1000 rows     Wasserstein (>=0.1)             Jensen-Shannon (>=0.1)
-# NOTE: Evidently's "wasserstein" is STANDARDIZED (distance / reference SD), so its
-# 0.1-style threshold is unitless. That is intentionally the *standardized* threshold for the Evidently report only. 
+# NOTE: Evidently's "wasserstein" is STANDARDIZED (distance / reference SD), 
+# so its style threshold is unitless.
+# That is intentionally the *standardized* threshold for the Evidently report only. 
 # The raw (unstandardized) Wasserstein is reported in the summary and logged to MLflow, 
 # so it can be compared against a PER-COLUMN threshold in the column's own units.
 def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
@@ -76,7 +73,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     # score both the reference and current batches with the champion model
     ref = score(pd.read_csv(reference_csv), model)
     cur = score(pd.read_csv(current_csv), model)
-    logger.info("Scored {} reference / {} current rows", len(ref), len(cur))
+    logger.info("Scored {} reference / {} current rows", len(ref), len(cur)) 
 
     report = Report(
         metrics=[
@@ -113,7 +110,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     }
     drift_sources = [f for f, r in feat_tests.items() if r["significant"]]
 
-    # ECDF diagnostics (the KS picture and its effect size D) for the numeric columns; these are artifacts in the report
+    # ECDF diagnostics (the KS picture and its effect size D) for the numeric columns
     ks_d, ecdf_paths = {}, {}
     for col in NUM_COLS:
         path = str(out_dir / f"ecdf_{col}.png")
@@ -155,7 +152,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
         mlflow.log_metric("age_ad_statistic", feat_tests["age"]["statistic"])
         mlflow.log_metric("age_ad_pvalue", feat_tests["age"]["p_value"])
         mlflow.log_metric("bmi_shift", feat_tests["bmi"]["shift"])
-        mlflow.log_metric("bmi_ad_statistic", feat_tests["bmi"]["statistic"]) # track effect size too
+        mlflow.log_metric("bmi_ad_statistic", feat_tests["bmi"]["statistic"]) # track effect size
         mlflow.log_metric("bmi_ad_pvalue", feat_tests["bmi"]["p_value"])
         # proportion test (kept) for the binary feature
         mlflow.log_metric("smoker_rate_shift", feat_tests["smoker"]["rate_shift"])
@@ -166,7 +163,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
             mlflow.log_artifact(ecdf_paths[col])
         mlflow.log_artifact(out_html)  # the Evidently HTML
         mlflow.log_text(json.dumps(feat_tests, indent=2), "feature_tests.json")
-    logger.success("Logged report + AD tests + ECDFs to MLflow (sources: {})", drift_sources or "none")
+    logger.success("Logged report: AD tests & ECDFs to MLflow ({})", drift_sources or "none")
     return summary
 
 
