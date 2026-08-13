@@ -61,10 +61,10 @@ def to_dataset(df: pd.DataFrame) -> Dataset:
 #   reference size   numerical (n_unique>5)          categorical / low-cardinality
 #   <= 1000 rows     two-sample KS (p<0.05)          Chi-square; binary -> Z-test
 #   >  1000 rows     Wasserstein (>=0.1)             Jensen-Shannon (>=0.1)
-# NOTE: Evidently's "wasserstein" is STANDARDIZED (distance / reference SD), 
+# NOTE: Evidently's "wasserstein" is STANDARDIZED (distance / reference SD),
 # so its style threshold is unitless.
-# That is intentionally the *standardized* threshold for the Evidently report only. 
-# The raw (unstandardized) Wasserstein is reported in the summary and logged to MLflow, 
+# That is intentionally the *standardized* threshold for the Evidently report only.
+# The raw (unstandardized) Wasserstein is reported in the summary and logged to MLflow,
 # so it can be compared against a PER-COLUMN threshold in the column's own units.
 def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     mlflow.set_tracking_uri(MLFLOW_URI)
@@ -73,7 +73,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     # score both the reference and current batches with the champion model
     ref = score(pd.read_csv(reference_csv), model)
     cur = score(pd.read_csv(current_csv), model)
-    logger.info("Scored {} reference / {} current rows", len(ref), len(cur)) 
+    logger.info("Scored {} reference / {} current rows", len(ref), len(cur))
 
     report = Report(
         metrics=[
@@ -91,7 +91,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     snapshot.save_html(out_html)
     logger.success("Report saved: {}", out_html)
 
-    # drift metric: RAW (unstandardized) Wasserstein per numeric col 
+    # drift metric: RAW (unstandardized) Wasserstein per numeric col
     wass = {
         c: round(wasserstein_dist(ref[c].to_numpy(), cur[c].to_numpy()), 3)
         for c in NUM_COLS + [TARGET]
@@ -114,15 +114,13 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
     ks_d, ecdf_paths = {}, {}
     for col in NUM_COLS:
         path = str(out_dir / f"ecdf_{col}.png")
-        ks_d[col] = round(
-            ecdf_plot(ref_raw[col].to_numpy(), cur_raw[col].to_numpy(), col, path), 3
-        )
+        ks_d[col] = round(ecdf_plot(ref_raw[col].to_numpy(), cur_raw[col].to_numpy(), col, path), 3)
         ecdf_paths[col] = path
 
     summary = {
         "batch": Path(current_csv).stem,
         "wasserstein": wass,  # raw distances, reported as magnitudes (non-zero => some drift)
-        "ks_d": ks_d,         # KS statistic from the ECDF plots (diagnostic)
+        "ks_d": ks_d,  # KS statistic from the ECDF plots (diagnostic)
         # decision comes from the tests' p-values:
         # the AD test for numeric, proportion for binary);
         # the Wasserstein distance is reported, not a gate -> also covers categorical drift
@@ -152,7 +150,7 @@ def monitor(reference_csv: str, current_csv: str, out_html: str) -> dict:
         mlflow.log_metric("age_ad_statistic", feat_tests["age"]["statistic"])
         mlflow.log_metric("age_ad_pvalue", feat_tests["age"]["p_value"])
         mlflow.log_metric("bmi_shift", feat_tests["bmi"]["shift"])
-        mlflow.log_metric("bmi_ad_statistic", feat_tests["bmi"]["statistic"]) # track effect size
+        mlflow.log_metric("bmi_ad_statistic", feat_tests["bmi"]["statistic"])  # track effect size
         mlflow.log_metric("bmi_ad_pvalue", feat_tests["bmi"]["p_value"])
         # proportion test (kept) for the binary feature
         mlflow.log_metric("smoker_rate_shift", feat_tests["smoker"]["rate_shift"])

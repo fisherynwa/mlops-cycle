@@ -14,7 +14,7 @@ class TestConfig:
     def test_encoders_is_plain_dict(self):
         # OmegaConf.to_container should give real dicts, not DictConfig objects
         assert isinstance(c.ENCODERS, dict)
-        
+
     def test_model_uri_points_at_champion(self):
         assert "@champion" in c.MODEL_URI
         assert c.REGISTRY_NAME in c.MODEL_URI

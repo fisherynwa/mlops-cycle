@@ -71,6 +71,7 @@ def ks_test(ref, cur, alpha):
         "significant": bool(p < alpha),
     }
 
+
 def proptest(ref, cur, positive, alpha):
     """Two-proportion Z-test: did the positive-class rate move?"""
     c = [int((cur == positive).sum()), int((ref == positive).sum())]
@@ -89,9 +90,9 @@ def proptest(ref, cur, positive, alpha):
 
 def ad_test(ref: np.ndarray, cur: np.ndarray, alpha: float) -> dict:
     """Two-sample Anderson-Darling test (AD).
- 
+
     The AD is more sensitive than the KS to differences at the tails.
- 
+
     Notes
     -----
     * The p-value is capped/floored by SciPy (~[0.001, 0.25]); this does NOT
@@ -115,17 +116,16 @@ def ad_test(ref: np.ndarray, cur: np.ndarray, alpha: float) -> dict:
         "significant": bool(p_value < alpha),
     }
 
- 
+
 def wasserstein_dist(ref: np.ndarray, cur: np.ndarray) -> float:
     """Raw (UNstandardized) 1-D Wasserstein-1 distance, in the column's own units.
- 
+
     Deliberately NOT divided by the reference SD. Consequence: the value is
-    comparable across *batches of the same column*, but NOT across columns    
+    comparable across *batches of the same column*, but NOT across columns
     """
-    return float(wasserstein_distance(np.asarray(ref, dtype=float),
-                                      np.asarray(cur, dtype=float)))
- 
- 
+    return float(wasserstein_distance(np.asarray(ref, dtype=float), np.asarray(cur, dtype=float)))
+
+
 def ecdf_plot(ref, cur, col, path):
     """Reference-vs-current ECDF overlay (the KS picture); returns KS D = max gap."""
     Fr, Fc = ecdf(ref).cdf, ecdf(cur).cdf
@@ -139,4 +139,3 @@ def ecdf_plot(ref, cur, col, path):
     plt.savefig(path, dpi=120, bbox_inches="tight")
     plt.close()
     return float(D)
- 
