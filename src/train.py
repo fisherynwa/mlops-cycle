@@ -19,7 +19,7 @@ Run:
   # stage a candidate — registers as @challenger, leaves @champion untouched
   python -m src.train registry.enabled=true model=age_spline_bmi_spline
   python -m src.train registry.enabled=true model=age_wiggly_spline_bmi_linear
-  python -m src.train gridsearch.enabled=false gridsearchperterm.0.lam_num=10 gridsearchperterm.1.lam_num=10
+  python -m src.train gridsearch.enabled=false gridsearchperterm.0.lam_num=10
   # promote the winner — moves @champion to this version (what serving loads)
   python -m src.train registry.enabled=true registry.promote=true
 
