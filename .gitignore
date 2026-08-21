@@ -16,3 +16,4 @@ outputs/               # Hydra's per-run output dirs
 logs/                  # your loguru log files
 *.log
 .DS_Store              # Mac clutter (harmless, but tidy if you ever share)
+.Rproj.user

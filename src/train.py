@@ -1,7 +1,7 @@
 """Train the GAM — config-driven (Hydra), logged (loguru + MLflow).
 
 Every run records scalar metrics, per-term p-values, and 2 artifacts:
-a partial-effects plot (with CI% bands) and residual
+a partial effects plot (with CI% bands) and residual
 diagnostics — all visible under the run's Artifacts tab in the MLflow UI.
 
 Run:
@@ -9,14 +9,17 @@ Run:
   python -m src.train
   python -m src.train model=age_spline_bmi_spline
   python -m src.train gridsearch.lam_num=5 data.path=data/no_drift.csv
+  # per-term gridsearch: each term gets its own lam range from the config list.
+  python -m src.train gridsearch.enabled=false gridsearchperterm.0.lam_num=50
 
   # compare several models in one sweep
   python -m src.train -m model=age_spline_bmi_linear,age_spline_bmi_spline
 
+  
   # stage a candidate — registers as @challenger, leaves @champion untouched
   python -m src.train registry.enabled=true model=age_spline_bmi_spline
   python -m src.train registry.enabled=true model=age_wiggly_spline_bmi_linear
-
+  python -m src.train gridsearch.enabled=false gridsearchperterm.0.lam_num=10 gridsearchperterm.1.lam_num=10 gridsearchperterm.2.lam_num=10
   # promote the winner — moves @champion to this version (what serving loads)
   python -m src.train registry.enabled=true registry.promote=true
 
@@ -138,10 +141,24 @@ def main(cfg: DictConfig) -> None:
     gam = LinearGAM(build_terms(cfg.model.terms))
     if cfg.gridsearch.enabled:
         lam = np.logspace(cfg.gridsearch.lam_min, cfg.gridsearch.lam_max, cfg.gridsearch.lam_num)
-        logger.debug("gridsearch over {} lam values", cfg.gridsearch.lam_num)
+        logger.debug("shared gridsearch over {} lam values", cfg.gridsearch.lam_num)
         gam.gridsearch(Xtr, ytr, lam=lam, progress=False)
+    # per-term gridsearch: each term gets its own lam range from the config list.
+    # this strategy is more expensive (but more correct, though) the default is a shared lam range for all terms, 
+    # which is faster but less flexible (kills the idea of wiggliness per term)
     else:
-        gam.fit(Xtr, ytr)
+        n_terms = sum(1 for t in gam.terms if not t.isintercept)
+        if len(cfg.gridsearchperterm) != n_terms:
+            raise ValueError(
+                f"gridsearchperterm has {len(cfg.gridsearchperterm)} ranges "
+                f"but model has {n_terms} terms")
+        lams = [
+            np.logspace(t.lam_min, t.lam_max, t.lam_num)
+            for t in cfg.gridsearchperterm
+        ]
+        n_fits = int(np.prod([len(g) for g in lams]))
+        logger.debug("per-term gridsearch: {} terms ({} fits)", len(lams), n_fits)
+        gam.gridsearch(Xtr, ytr, lam=lams, progress=False)
 
     metrics = compute_metrics(gam, yva, gam.predict(Xva))
     logger.info("Metrics: {}", metrics)
@@ -150,24 +167,29 @@ def main(cfg: DictConfig) -> None:
     mlflow.set_experiment(cfg.mlflow.experiment)
     with mlflow.start_run(run_name=cfg.model.name):
         mlflow.log_params(
-            {
+           {
                 "model": cfg.model.name,
                 "test_size": cfg.data.test_size,
                 "gridsearch": cfg.gridsearch.enabled,
+                "gridsearch_mode": "shared" if cfg.gridsearch.enabled else "per_term",
                 "lam_num": cfg.gridsearch.lam_num,
                 "data": cfg.data.path,
                 "seed": cfg.seed,
                 "CI": cfg.ci,
             }
         )
+        # chosen lambdas (after fit/gridsearch)
+        chosen_lams = [float(np.ravel(t.lam)[0]) for t in gam.terms if not t.isintercept]
+        for name, lam in zip(feature_names, chosen_lams, strict=True):
+            mlflow.log_metric(f"lam_{name}", lam)
         mlflow.log_metrics(metrics)
         mlflow.log_text(OmegaConf.to_yaml(cfg), "config.yaml")
 
-        # per-term p-values (scalars, one metric each)
+        # p-values are logged for each term (including the intercept)
         for name, p in zip(feature_names + ["intercept"], gam.statistics_["p_values"], strict=True):
             mlflow.log_metric(f"pval_{name}", float(p))
 
-        # artifacts: partial-effects plot (PEP) as well as residual diagnostics
+        # artifacts: partial effects plot (PEP) as well as residual diagnostics
         # PEPs with CI confidence bands (conf. via Hydra; default = 95%)
         fig_pe = plot_partial_effects(gam, feature_names, cfg.ci)
         mlflow.log_figure(fig_pe, "partial_effects.png")

@@ -11,9 +11,17 @@ data:
 
 gridsearch:
   enabled: true
-  lam_min: -3      # 10**lam_min
-  lam_max: 4      # 10**lam_max
+  lam_min: -3
+  lam_max: 4
   lam_num: 50
+
+# mgcv estimates a lambda value per covariate; 
+# here we approximate that with via a grid search (not ideal, though!)
+# Note: mgcv is more advanced than this, but this is a simple approximation
+gridsearchperterm:
+  - {lam_min: -3, lam_max: 7, lam_num: 8}   # s(0) age  — spline, wide range
+  - {lam_min: -1, lam_max: 3, lam_num: 8}   # l(1) bmi  — linear
+  - {lam_min: 0,  lam_max: 0, lam_num: 1}   # f(2) smoker — factor; this range is intentional
 
 mlflow:
   tracking_uri: sqlite:///${hydra:runtime.cwd}/mlflow.db

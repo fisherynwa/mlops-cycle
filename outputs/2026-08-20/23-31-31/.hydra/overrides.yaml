@@ -1,0 +1,3 @@
+- gridsearch.enabled=false
+- gridsearchperterm.0.lam_num=20
+- gridsearchperterm.1.lam_num=20

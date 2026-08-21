@@ -43,7 +43,7 @@ Each piece is decoupled through the **MLflow model registry**: the trainer *writ
 ## Key design decisions
 
 - **GAM over black-box** -- interpretability. Each prediction decomposes into per-feature contributions (`intercept + splie(age, 15) + linear(bmi) + f(smoker)`).
-- **Model selection by the Akaike information criterion (AIC) and `EDoF`** -- the linear-bmi (in-sample) model (`s(0, n_splines=15)+l(1)+f(2)`) beat the spline-bmi variant in the AIC context and the `EDoF`, for equivalent fit. BMI's effect is genuinely near-linear; spending flexibility on it was wasteful.
+- **Model selection by the Akaike information criterion (AIC) and `EDoF`** -- the linear-bmi (in-sample) model (`s(0, n_splines=15)+l(1)+f(2)`) beat the spline-bmi variant in the AIC context and the `EDoF` estimation, for equivalent fit. BMI's effect is genuinely near-linear (by simulation); spending flexibility on it was wasteful.
 - **Champion / challenger registry** — models register as `@challenger`; promotion to `@champion` is an explicit, gated step. Serving always loads the current champion by alias (e..g., `v1`).
 - **Drift attribution** (two layers)-- beyond a yes/no drift verdict, the raw (unstandardized) Wasserstein distance reports (on the MLflow page) the magnitude of shift per numeric feature, while per-feature statistical tests drive the decision: a two-sample Anderson–Darling test for `age` and `bmi` (more sensitive than the KS to differences at the tails; check out the "/docs/ks_vs_ad_power.png" plot), and a two-proportion Z-test for the binary `smoker`. The ECDF (empirical cumulative density function)  (with its KS gap) is logged for each numeric feature as a visual diagnostic alongside their (hypothesis) tests.
 
@@ -172,7 +172,14 @@ pytest
 
 ## Notes
 
-Data is **synthetic** (generated to control drift scenarios). The system is production-*shaped* — model registry, alias-based serving, containerization, monitoring — to demonstrate the MLOps lifecycle, not a production deployment.
+First, data is **synthetic** (generated to control drift scenarios). The system is production-*shaped* — model registry, alias-based serving, containerization, monitoring — to demonstrate the MLOps lifecycle, not a production deployment.
+
+Second, this repo uses pygam for GAM parameter estimation. `pygam` is a pure-Python implementation (scikit-learn-style API), so it does not need `R` runtime. To this end, the `pygam` choice keeps the container lightweight and the pipeline reproducible, a natural fit for this `MLOps` setup.
+
+A more statistically advanced option is `pymgcv`, a Python interface to Prof. Simon Wood's `mgcv` package (in `R`). The latter exposes automatic smoothness selection (REML/GCV/ML; smoothing parameters estimated jointly), but because it calls `R` under the hood it requires an `R` installation alongside Python.
+
+Having said that, some comparisons were carried out to confirm "closely matching" estimations across `pygam` and `mgcv`. Notice that
+`mgcv` estimates a separate smoothing parameter (viz. `lambda`) for each covariate, jointly and automatically. The covariate lambda search added here is the pygam-side approximation of that behavior. 
 
 ## License
 
