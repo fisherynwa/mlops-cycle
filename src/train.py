@@ -19,7 +19,7 @@ Run:
   # stage a candidate — registers as @challenger, leaves @champion untouched
   python -m src.train registry.enabled=true model=age_spline_bmi_spline
   python -m src.train registry.enabled=true model=age_wiggly_spline_bmi_linear
-  python -m src.train gridsearch.enabled=false gridsearchperterm.0.lam_num=10 gridsearchperterm.1.lam_num=10 gridsearchperterm.2.lam_num=10
+  python -m src.train gridsearch.enabled=false gridsearchperterm.0.lam_num=10 gridsearchperterm.1.lam_num=10
   # promote the winner — moves @champion to this version (what serving loads)
   python -m src.train registry.enabled=true registry.promote=true
 
@@ -144,7 +144,8 @@ def main(cfg: DictConfig) -> None:
         logger.debug("shared gridsearch over {} lam values", cfg.gridsearch.lam_num)
         gam.gridsearch(Xtr, ytr, lam=lam, progress=False)
     # per-term gridsearch: each term gets its own lam range from the config list.
-    # this strategy is more expensive (but more correct, though) the default is a shared lam range for all terms, 
+    # this strategy is more expensive (but more correct, though) 
+    # the default is a shared lam range for all terms 
     # which is faster but less flexible (kills the idea of wiggliness per term)
     else:
         n_terms = sum(1 for t in gam.terms if not t.isintercept)
