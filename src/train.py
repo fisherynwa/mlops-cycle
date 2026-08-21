@@ -15,7 +15,7 @@ Run:
   # compare several models in one sweep
   python -m src.train -m model=age_spline_bmi_linear,age_spline_bmi_spline
 
-  
+
   # stage a candidate — registers as @challenger, leaves @champion untouched
   python -m src.train registry.enabled=true model=age_spline_bmi_spline
   python -m src.train registry.enabled=true model=age_wiggly_spline_bmi_linear
@@ -144,19 +144,17 @@ def main(cfg: DictConfig) -> None:
         logger.debug("shared gridsearch over {} lam values", cfg.gridsearch.lam_num)
         gam.gridsearch(Xtr, ytr, lam=lam, progress=False)
     # per-term gridsearch: each term gets its own lam range from the config list.
-    # this strategy is more expensive (but more correct, though) 
-    # the default is a shared lam range for all terms 
+    # this strategy is more expensive (but more correct, though)
+    # the default is a shared lam range for all terms
     # which is faster but less flexible (kills the idea of wiggliness per term)
     else:
         n_terms = sum(1 for t in gam.terms if not t.isintercept)
         if len(cfg.gridsearchperterm) != n_terms:
             raise ValueError(
                 f"gridsearchperterm has {len(cfg.gridsearchperterm)} ranges "
-                f"but model has {n_terms} terms")
-        lams = [
-            np.logspace(t.lam_min, t.lam_max, t.lam_num)
-            for t in cfg.gridsearchperterm
-        ]
+                f"but model has {n_terms} terms"
+            )
+        lams = [np.logspace(t.lam_min, t.lam_max, t.lam_num) for t in cfg.gridsearchperterm]
         n_fits = int(np.prod([len(g) for g in lams]))
         logger.debug("per-term gridsearch: {} terms ({} fits)", len(lams), n_fits)
         gam.gridsearch(Xtr, ytr, lam=lams, progress=False)
@@ -168,7 +166,7 @@ def main(cfg: DictConfig) -> None:
     mlflow.set_experiment(cfg.mlflow.experiment)
     with mlflow.start_run(run_name=cfg.model.name):
         mlflow.log_params(
-           {
+            {
                 "model": cfg.model.name,
                 "test_size": cfg.data.test_size,
                 "gridsearch": cfg.gridsearch.enabled,
