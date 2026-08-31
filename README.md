@@ -18,7 +18,7 @@ An end-to-end MLOps pipeline that predicts insurance charges via a **Generalized
 
 ## Overview
 
-The project trains a GAM to predict insurance `charges` from `age`, `bmi` (linear), and `smoker`, then **serves** as well as **monitors** it as a production-shaped system. This GAM was chosen over a black-box model because each feature's effect is **inspectable** - by means of partial effect plots (PEPs); these plots show the individual component effect of a smooth function on the **link scale**, conditional on all other terms in the model being set to zero. 
+The project trains a GAM to predict insurance `charges` from `age`, `bmi` (linear), and `smoker`, then **serves** as well as **monitors** it as a production-shaped system. This GAM was chosen over a black-box model because each feature's effect is **inspectable**. Because the model is additive, each smooth contributes independently to the linear predictor, and its PEP demonstrates each component (centered on its mean) regardless of the other terms' values. 
 
 ![PEPs](docs/partial_effects.png)
 
