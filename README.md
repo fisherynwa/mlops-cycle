@@ -158,7 +158,6 @@ The panel below shows the **average predicted charge rising as a drifted batch i
 pytest
 ```
 
-
 ---
 
 ## Tech stack
@@ -179,7 +178,123 @@ Second, this repo uses pygam for GAM parameter estimation. `pygam` is a pure-Pyt
 A more statistically advanced option is `pymgcv`, a Python interface to Prof. Simon Wood's `mgcv` package (in `R`). The latter exposes automatic smoothness selection (REML/GCV/ML; smoothing parameters estimated jointly), but because it calls `R` under the hood it requires an `R` installation alongside Python.
 
 Having said that, some comparisons were carried out to confirm "closely matching" estimations across `pygam` and `mgcv`. Notice that
-`mgcv` estimates a separate smoothing parameter (viz. `lambda`) for each covariate, jointly and automatically. The covariate lambda search added here is the pygam-side approximation of that behavior. 
+`mgcv` estimates a separate smoothing parameter (viz. `lambda` in the `pygam` context) for each covariate, jointly and automatically. The covariate lambda search added here is the pygam-side approximation of that behavior. 
+
+## Deployment (Google Cloud)
+
+Stage 1 deploys the same `docker-compose.yml` stack unmodified onto a single Compute Engine VM, with only the prediction API exposed to the internet.
+
+### 1. Create the VM
+
+```bash
+gcloud compute instances create insurance-mlops-vm \
+  --zone=us-central1-a \
+  --machine-type=e2-medium \
+  --image-family=ubuntu-2204-lts \
+  --image-project=ubuntu-os-cloud \
+  --boot-disk-size=30GB \
+  --boot-disk-type=pd-balanced \
+  --tags=mlops-api
+```
+
+The `mlops-api` network tag is what the firewall rule below targets, so only this VM (not the whole network) gets port 8000 opened.
+
+### 2. Open only port 8000
+
+```bash
+gcloud compute firewall-rules create allow-mlops-api-8000 \
+  --network=default \
+  --direction=INGRESS \
+  --action=ALLOW \
+  --rules=tcp:8000 \
+  --source-ranges=0.0.0.0/0 \
+  --target-tags=mlops-api
+```
+
+No other port is opened to the internet. SSH access uses IAP tunneling instead of a firewall-opened port 22:
+
+```bash
+gcloud compute firewall-rules create allow-ssh-iap \
+  --network=default \
+  --direction=INGRESS \
+  --action=ALLOW \
+  --rules=tcp:22 \
+  --source-ranges=35.235.240.0/20   # Google's fixed IAP TCP-forwarding range
+```
+
+If your project still has the default `default-allow-ssh` / `default-allow-rdp` rules (created automatically with the `default` network), delete them so SSH/RDP aren't reachable from the open internet:
+
+```bash
+gcloud compute firewall-rules delete default-allow-ssh default-allow-rdp
+```
+
+### 3. SSH in via IAP, install Docker
+
+```bash
+gcloud compute ssh insurance-mlops-vm --zone=us-central1-a --tunnel-through-iap
+```
+
+Then, on the VM:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg git
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
+```
+
+### 4. Clone the repo and bring up the stack
+
+```bash
+git clone https://github.com/fisherynwa/mlops-cycle.git ~/mlops-cycle
+cd ~/mlops-cycle
+sudo docker compose up -d
+```
+
+`trainer` runs once, trains and registers the champion model, then exits; `api` waits for it to finish successfully (`depends_on: service_completed_successfully`) before starting.
+
+### 5. Watch training finish, then verify `/predict`
+
+```bash
+sudo docker compose logs -f trainer   # wait for it to exit 0
+sudo docker compose ps                # confirm `api` is Up
+```
+
+From your own machine, against the VM's external IP:
+
+```bash
+curl http://<EXTERNAL_IP>:8000/health
+curl -X POST http://<EXTERNAL_IP>:8000/predict \
+  -H "content-type: application/json" \
+  -d '{"age": 45, "bmi": 30.5, "smoker": "yes"}'
+# -> {"charge": 34660.58, "model_version": "1"}
+```
+
+### Cost control
+
+The VM (and its disk) keeps billing while it exists, whether or not the stack is running. Stop it when you're not using it:
+
+```bash
+gcloud compute instances stop insurance-mlops-vm --zone=us-central1-a
+```
+
+A stopped instance drops the compute charge (only the ~30GB persistent disk keeps billing, a few cents/month). Restart with:
+
+```bash
+gcloud compute instances start insurance-mlops-vm --zone=us-central1-a
+```
+
+Note the external IP is ephemeral by default and will change on restart unless you reserve a static one. To tear everything down instead:
+
+```bash
+gcloud compute instances delete insurance-mlops-vm --zone=us-central1-a
+gcloud compute firewall-rules delete allow-mlops-api-8000 allow-ssh-iap
+```
 
 ## License
 
